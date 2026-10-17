@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Title will be overridden at runtime from VITE_APP_NAME if provided -->
-    <title>App</title>
+    <!-- Title is derived from VITE_APP_NAME when provided; the default keeps the tab readable without .env -->
+    <title>MediaAI · Dashboard</title>
+    <meta name="description" content="新传媒公司 AI 运营 Dashboard" />
     <meta name="theme-color" content="#ffffff" />
     <meta name="msapplication-TileColor" content="#2d89ef" />
     <link rel="manifest" href="/site.webmanifest" />
@@ -25,6 +26,6 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <noscript>当前浏览器已禁用 JavaScript，请开启后重试。</noscript>
   </body>
 </html>

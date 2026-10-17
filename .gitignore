@@ -50,3 +50,14 @@
 
 # React app env
 react-app/.env
+react-app/.env.local
+react-app/.env.*.local
+
+# Locally generated development JWT signing keys (should live outside the repo anyway)
+local-signing.key
+**/local-signing.key
+
+# Local-only backend config that may contain real credentials
+Services/App.Api/appsettings.Development.json
+Services/App.Api/appsettings.Live.json
+Services/App.Api/appsettings.*.local.json

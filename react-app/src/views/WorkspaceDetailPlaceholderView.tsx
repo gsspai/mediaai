@@ -1,40 +1,69 @@
+import PageShell from '@/components/dashboard/PageShell';
+import { Panel, PanelBody, PanelHeader } from '@/components/dashboard/Panel';
+import StatusPill from '@/components/dashboard/StatusPill';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
+
+const routeMeta = [
+  { prefix: '/business', label: '商务合作', next: ['合作单列表与筛选', '报价审批流', '交付排期与验收'] },
+  { prefix: '/plans', label: '内容计划', next: ['选题评分明细', '各平台方向与排期', '发布后数据回收'] },
+  { prefix: '/connections', label: '平台连接', next: ['账号授权状态', '同步失败重试', '平台限额与告警'] },
+  { prefix: '/analysis', label: '数据分析', next: ['平台对比视图', '爆款归因', '限流风险预警'] },
+];
 
 const WorkspaceDetailPlaceholderView = () => {
   const location = useLocation();
+  const meta = routeMeta.find((item) => location.pathname.startsWith(item.prefix));
 
   return (
-    <main className="min-h-screen px-6 py-10 text-foreground sm:px-8 lg:px-10">
-      <section className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.22em] text-muted-foreground">
-          <span>MediaAI</span>
-          <span className="h-1 w-1 rounded-full bg-foreground/30" />
-          <span>详情占位</span>
-        </div>
+    <PageShell>
+      <Panel>
+        <PanelHeader
+          eyebrow="MediaAI · 详情占位"
+          title={meta?.label ?? '待建设页面'}
+          actions={<StatusPill tone="info">开发中</StatusPill>}
+        />
+        <PanelBody className="space-y-6">
+          <div className="space-y-2">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">当前跳转路径</p>
+            <p className="font-mono text-sm break-all text-foreground">{location.pathname}</p>
+          </div>
 
-        <Card className="border-border/60 bg-card/90 shadow-none">
-          <CardHeader className="border-b border-border/60 pb-5">
-            <CardDescription>当前跳转路径</CardDescription>
-            <CardTitle className="text-3xl tracking-tight">{location.pathname}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-5 p-6">
-            <p className="max-w-3xl text-sm leading-7 text-muted-foreground">
-              工作台中的直达入口已经就位。这里先承接到对应详情路径，后续任务会逐步补齐商务合作、内容计划、平台连接与分析页面的真实业务内容。
-            </p>
+          <p className="max-w-2xl text-sm leading-7 text-muted-foreground">
+            工作台的直达入口已经就位，这里先承接对应详情路径。真实业务内容将按下列顺序补齐。
+          </p>
 
+          <div className="grid gap-3 sm:grid-cols-3">
+            {(meta?.next ?? ['页面结构', '数据接口', '交互细节']).map((item, index) => (
+              <div key={item} className="rounded-2xl border border-border/60 bg-background/60 px-5 py-4">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  {String(index + 1).padStart(2, '0')}
+                </p>
+                <p className="mt-2 text-sm font-medium">{item}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap gap-3">
             <Button variant="outline" asChild>
               <Link to="/">
                 <ArrowLeft className="size-4" />
                 返回工作台
               </Link>
             </Button>
-          </CardContent>
-        </Card>
-      </section>
-    </main>
+            {location.pathname.startsWith('/business') ? (
+              <Button variant="ghost" asChild>
+                <Link to="/business">
+                  浏览合作列表
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        </PanelBody>
+      </Panel>
+    </PageShell>
   );
 };
 

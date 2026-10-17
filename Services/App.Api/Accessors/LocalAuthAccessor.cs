@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using App.Api.Utilities;
 
@@ -18,9 +19,11 @@ namespace App.Api.Accessors
     {
         private readonly string _userFilePath;
         private readonly ILogger<LocalAuthAccessor> _logger;
+        private readonly string _signingKey;
         private const string LocalJwtIssuer = "ride-local";
         private const string LocalJwtAudience = "authenticated";
-        private const string LocalJwtSigningKey = "ride-local-dev-signing-key-32bytes-minimum!!";
+        private const int MinSigningKeyLength = 32;
+        private const string SigningKeyFileName = "local-signing.key";
         private readonly string _mockRefreshToken = "local-dev-static-refresh-token";
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
@@ -33,6 +36,63 @@ namespace App.Api.Accessors
             Directory.CreateDirectory(rootDir);
             _userFilePath = Path.Combine(rootDir, "Users.json");
             _logger = logger;
+            _signingKey = ResolveSigningKey(config, rootDir, logger);
+        }
+
+        /// <summary>
+        /// Resolves the development JWT signing key without ever shipping a key in source control:
+        /// 1. explicit configuration (<c>AppConfiguration:LocalJwtSigningKey</c>) wins;
+        /// 2. otherwise a random key is generated once and persisted under the local app data directory
+        ///    with owner-only permissions, so tokens survive restarts on the same machine.
+        /// </summary>
+        private static string ResolveSigningKey(AppConfiguration config, string rootDir, ILogger logger)
+        {
+            var configured = config.LocalJwtSigningKey?.Trim();
+            if (!string.IsNullOrEmpty(configured))
+            {
+                if (configured.Length < MinSigningKeyLength)
+                {
+                    throw new InvalidOperationException(
+                        $"AppConfiguration:LocalJwtSigningKey must be at least {MinSigningKeyLength} characters long.");
+                }
+                return configured;
+            }
+
+            string keyFilePath = Path.Combine(rootDir, SigningKeyFileName);
+            if (File.Exists(keyFilePath))
+            {
+                var existing = File.ReadAllText(keyFilePath).Trim();
+                if (existing.Length >= MinSigningKeyLength)
+                {
+                    return existing;
+                }
+                logger.LogWarning("Local signing key at {Path} is invalid; regenerating a new one.", keyFilePath);
+            }
+
+            var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
+            File.WriteAllText(keyFilePath, generated);
+            RestrictToCurrentUser(keyFilePath);
+            logger.LogInformation(
+                "Generated a local development signing key at {Path}. Override it with AppConfiguration:LocalJwtSigningKey when needed.",
+                keyFilePath);
+            return generated;
+        }
+
+        private static void RestrictToCurrentUser(string path)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            try
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch (Exception)
+            {
+                // Best effort only: some file systems ignore POSIX permissions.
+            }
         }
 
         private async Task<List<User>> LoadUsersAsync()
@@ -52,7 +112,7 @@ namespace App.Api.Accessors
         private string GenerateJwt(User user)
         {
             var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.UTF8.GetBytes(LocalJwtSigningKey);
+            var key = Encoding.UTF8.GetBytes(_signingKey);
             var appMetadata = new { roles = user.Roles };
             string appMetaJson = JsonSerializer.Serialize(appMetadata);
 
@@ -231,7 +291,7 @@ namespace App.Api.Accessors
             return Task.FromResult(BuildLocalTokenValidationParameters(validateLifetime: true));
         }
 
-        private static TokenValidationParameters BuildLocalTokenValidationParameters(bool validateLifetime)
+        private TokenValidationParameters BuildLocalTokenValidationParameters(bool validateLifetime)
         {
             return new TokenValidationParameters
             {
@@ -242,7 +302,7 @@ namespace App.Api.Accessors
                 ValidateLifetime = validateLifetime,
                 ClockSkew = TimeSpan.FromMinutes(validateLifetime ? 2 : 1),
                 ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(LocalJwtSigningKey))
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_signingKey))
             };
         }
     }
