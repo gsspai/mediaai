@@ -84,7 +84,7 @@ const throttledContent = [
 
 const businessRows = [
   { name: '青岚科技春季合作', owner: '商务 / 林乔', status: '待报价审核', statusTone: 'warning' as StatusTone, nextStep: '财务确认报价区间', href: '/business/deal-qinglan' },
-  { name: '云屿品牌发布专项', owner: '管理层 / 周岚', status: '待管理确认', statusTone: 'info' as StatusTone, nextStep: '确认排期与交付边界', href: '/business/deal-yunyu' },
+  { name: '云屿品牌发布专项', owner: '管理员 / 周岚', status: '待管理确认', statusTone: 'info' as StatusTone, nextStep: '确认排期与交付边界', href: '/business/deal-yunyu' },
   { name: '洛川汽车区域投放', owner: '运营 / 许舟', status: '待制作 / 发布', statusTone: 'default' as StatusTone, nextStep: '补齐短视频封面与发布时间', href: '/business/deal-luochuan' },
 ];
 
@@ -465,15 +465,15 @@ const MetricTile = ({ label, value }: { label: string; value: string }) => (
 );
 
 const getRoleLabels = (roles: string[]) => {
-  if (roles.length === 0) return ['团队协同'];
+  if (roles.length === 0) return ['访客'];
   return roles.map((role) => {
-    if (role === 'admin') return '管理层';
+    if (role === 'admin') return '管理员';
     if (role === 'finance') return '财务';
     if (role === 'planner') return '策划';
-    if (role === 'operations') return '运营 / 发布';
-    if (role === 'editor') return '编辑 / 内容生产';
-    if (role === 'analyst') return '数据分析';
-    if (role === 'sales') return '商务 / 客户经理';
+    if (role === 'operations') return '运营';
+    if (role === 'editor') return '剪辑';
+    if (role === 'analyst') return '分析';
+    if (role === 'sales') return '商务';
     return role;
   });
 };

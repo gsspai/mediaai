@@ -1,6 +1,8 @@
-# MediaAI — 新传媒公司 AI 运营驾驶舱
+# MediaAI — 个人自媒体矩阵运营工作台
 
-MediaAI 面向新传媒公司的多角色协作场景：把商务合作、日常内容计划、平台连接与数据分析收敛到一个工作台，先看平台态势，再判断爆款机会与限流风险。
+MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播放与互动、爆款机会、限流风险，连同商务合作与内容排期收敛到同一块屏幕——先看态势，再判断机会与风险，最后落到「谁、在哪一步、做什么」。
+
+定位、角色、指标口径与界面结构的完整说明见[产品文档](https://gsspai.github.io/mediaai/)。
 
 当前仓库处于**前端原型阶段**：工作台页面、角色视图与设计系统已就绪，页面数据仍为前端 mock，后端仅保留认证骨架。
 
@@ -35,9 +37,7 @@ MediaAI 面向新传媒公司的多角色协作场景：把商务合作、日常
 
 产品文档是单文件静态页（`docs/product-overview.html`，入口页 `docs/index.html`），无构建与外部依赖，由 GitHub Pages 从 `main` 分支的 `/docs` 目录发布。
 
-首次启用：仓库 **Settings → Pages → Source 选 `Deploy from a branch` → Branch `main`、目录 `/docs` → Save**，约 1 分钟后生效。
-
-Pages 生效前可用 CDN 镜像打开同一份文件：[raw.githack 镜像](https://raw.githack.com/gsspai/mediaai/main/docs/product-overview.html)。
+已启用：仓库 **Settings → Pages → Source `Deploy from a branch` → Branch `main`、目录 `/docs`**，访问 https://gsspai.github.io/mediaai/ 即可。推送到 `main` 后约 1 分钟自动发布，无需构建。
 
 ---
 
@@ -48,8 +48,9 @@ Pages 生效前可用 CDN 镜像打开同一份文件：[raw.githack 镜像](htt
 | 工作台首页（`/`） | 已完成（静态） | 平台态势、爆款机会、限流风险、执行列表、管理层概览 |
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
-| 详情页 | 占位 | `/business`、`/plans`、`/connections`、`/analysis` 均指向占位视图 |
-| 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法 |
+| 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
+| 详情页 | 占位 | `/business`、`/plans/:planId`、`/connections/:platform`、`/analysis/:viewId` 指向占位视图；`/login`、`/settings` 尚未建立 |
+| 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
 | 业务接口 | 未开始 | 尚无 Dashboard / 商务 / 计划 / 连接 / 分析的 Manager 与 DTO |
 | 登录页 | 未开始 | 目前没有登录 UI，工作台按匿名或已存会话渲染 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
@@ -63,7 +64,8 @@ Pages 生效前可用 CDN 镜像打开同一份文件：[raw.githack 镜像](htt
 - **前端**：React 18 + TypeScript + Vite + Tailwind CSS v4 + ShadCN UI（`radix-ui`）
 - **状态**：Zustand
 - **后端**：.NET 8 Web API，统一 RPC 入口（ServiceInvoker）
-- **认证**：Supabase Auth（本地开发使用 `LocalAuthAccessor`）
+- **身份**：飞书企业自建应用免登（OAuth 授权码 → `open_id` → 本系统 JWT），本地开发用 `LocalAuthAccessor` 兜底
+- **数据库托管**：Supabase（Postgres）
 - **文档数据库**：MartenDB（PostgreSQL，非 `public` 的 `app` schema；本地开发写入 JSON 文件）
 
 ---
@@ -146,7 +148,7 @@ cd react-app && npm test
 | --- | --- | --- |
 | `VITE_API_URL` | 后端根地址，仅填 origin；`ApiClient` 会拼接 `/Api/invoke` | `https://<your-api-host>` |
 | `VITE_APP_NAME` | Web App Manifest 名称 | `MediaAI` |
-| `VITE_APP_DESCRIPTION` | Web App Manifest 描述 | `新传媒公司 AI 运营驾驶舱` |
+| `VITE_APP_DESCRIPTION` | Web App Manifest 描述 | `个人自媒体矩阵运营工作台` |
 
 后端（`AppConfiguration` 节，环境变量前缀 `AppConfiguration__`）：
 
@@ -162,6 +164,18 @@ cd react-app && npm test
 | `LocalJwtSigningKey` | 仅开发环境：本地 JWT 签名密钥（至少 32 字符）。留空则自动生成并持久化 | `<generated-on-first-run>` |
 
 `Services/App.Api/appsettings.json` 中只有 `default` 等占位串，可直接公开。
+
+飞书自建应用（环境变量前缀 `Feishu__`，**全部为服务端配置，不下发前端**）：
+
+| 键 | 用途 | 示例（占位） |
+| --- | --- | --- |
+| `Feishu__AppId` / `Feishu__AppSecret` | 自建应用凭据，`AppSecret` 不入库、不回显 | `<app-id>` / `<masked>` |
+| `Feishu__RedirectUri` | 免登回调地址，须与开放平台后台登记完全一致 | `https://<your-host>/auth/feishu/callback` |
+| `Feishu__VerificationToken` / `Feishu__EncryptKey` | 事件回调验签与解密 | `<masked>` |
+| `Feishu__ApprovalCodes` | 报价审核 / 发布确认的 `approval_code` | `{"quote":"<code>","publish":"<code>"}` |
+| `Feishu__AlertWebhook` | 运营群机器人地址 | `https://open.feishu.cn/open-apis/bot/v2/hook/<masked>` |
+
+用户组 → 角色映射存数据库（`RoleMappingConfig`），在 `/settings` 页维护、热生效，不走环境变量。
 
 ---
 
@@ -182,8 +196,9 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 - 前端在请求体内携带 `AccessToken` / `RefreshToken`，响应 envelope 返回刷新后的 token 与 `SessionDto`。
 - `AuthManager` 同时实现 `IAuthTokenManager`，由 ServiceInvoker 统一协调「先刷新、再鉴权、再调用」。
-- 生产环境通过 Supabase JWKS 校验 JWT；本地开发使用本地签发与校验。
-- 角色存放在 Supabase `app_metadata.roles`，由 `[RequireRole(...)]` 校验。
+- 身份来源是飞书：前端用授权码换 `open_id`，后端据此 upsert 用户并**签发本系统 JWT**；飞书 `user_access_token` 用完即弃，不落库、不下发浏览器。
+- 角色由飞书用户组映射得出（`RoleMappingConfig`，存库可热改），写入 `Session.Roles` 后由 `[RequireRole(...)]` 校验；数据归属另按 `OwnerId` 二次校验，两者都过才放行。
+- 本地开发用 `LocalAuthAccessor` 签发与校验，保留管理员兜底账号（仅 admin 可用）；生产环境校验本系统签发的 JWT。
 
 详见 [docs/service-invoker-auth-flow.md](docs/service-invoker-auth-flow.md) 与 [docs/service-invoker-streaming.md](docs/service-invoker-streaming.md)。
 
@@ -191,32 +206,41 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 ## 角色与权限
 
-前端已按 7 类业务角色渲染视图与默认执行列表：
+界面名称、默认视图与[产品文档 · 用户与角色](https://gsspai.github.io/mediaai/)一列一致：
 
-| 角色标识 | 界面名称 | 默认执行列表 |
+| 角色标识 | 界面名称 | 默认视图 |
 | --- | --- | --- |
-| `admin` | 管理层 | 商务合作（并展示管理层概览） |
-| `sales` | 商务 / 客户经理 | 商务合作 |
-| `finance` | 财务 | 跨角色待办 |
-| `planner` | 策划 | 日常内容计划 |
-| `operations` | 运营 / 发布 | 日常内容计划 |
-| `editor` | 编辑 / 内容生产 | 日常内容计划 |
-| `analyst` | 数据分析 | 日常内容计划 |
+| `admin` | 管理员 | 总览（额外展示管理面板） |
+| `sales` | 商务 | 商务单 |
+| `finance` | 财务 | 商务单（报价复核） |
+| `planner` | 策划 | 内容计划 |
+| `operations` | 运营 | 内容计划（限流处置） |
+| `editor` | 剪辑 | 待办 |
+| `analyst` | 分析 | 总览 |
+| — | 访客（未加入业务用户组） | 总览，只读 |
 
-> **已知不一致**：后端 `Services/App.Api/Utilities/Roles/Roles.cs` 目前只定义 `admin` / `user` / `authenticated`，上述业务角色尚未落地，`[RequireRole("finance")]` 这类标记暂时无效。这是下一步 P0 项。
+角色不在本系统维护名单：以飞书用户组为准，入组即得权限、离组即失权，映射关系存 `RoleMappingConfig`。
+
+> **已知不一致**：后端 `Services/App.Api/Utilities/Roles/Roles.cs` 目前只定义 `admin` / `user` / `authenticated`，上述业务角色尚未落地，`[RequireRole("finance")]` 这类标记暂时无效；前端 `ExampleView.tsx` 的角色显示名已按上表更新。这是下一步 P0 项。
 
 ---
 
 ## 前端路由
 
+产品文档定义了 6 个页面（`/login`、`/`、`/business`、`/plans`、`/connections`、`/settings`）。当前实现进度：
+
 | 路径 | 页面 | 状态 |
 | --- | --- | --- |
-| `/` | 工作台首页 | 静态实现 |
+| `/` | 工作台首页（Dashboard） | 静态实现；尚未挂 `ProtectedRoute` |
+| `/login` | 登录（飞书免登） | 未建立 |
 | `/business` | 商务合作列表 | 占位 |
 | `/business/:dealId` | 合作单详情 | 占位 |
+| `/plans` | 内容计划列表 | 未建立（仅有详情占位） |
 | `/plans/:planId` | 内容计划详情 | 占位 |
+| `/connections` | 平台连接列表 | 未建立（仅有详情占位） |
 | `/connections/:platform` | 平台连接详情 | 占位 |
-| `/analysis/:viewId` | 数据分析视图 | 占位 |
+| `/settings` | 设置（阈值、默认视图、通知渠道） | 未建立 |
+| `/analysis/:viewId` | 数据分析视图 | 占位；产品文档未列此页，待并入首页管理面板后下线 |
 | `/unauthorized` | 无权限 | 已统一文案与样式 |
 | `*` | 404 | 已统一文案与样式 |
 
@@ -292,10 +316,11 @@ git status --ignored --short | grep -E "\.env|appsettings"
 
 ### P0 — 打通「有数据、有身份」的主链路
 
-1. **角色口径对齐**
+1. **飞书免登**：新增 `/login`（跳转飞书授权）与 `/auth/feishu/callback` 两个入口，由 `FeishuManager.ExchangeCode` 换 `open_id` 并签发本系统 JWT，`/` 挂上 `ProtectedRoute`；飞书凭据只走 `Feishu__*` 环境变量，token 不下发浏览器。
+2. **角色口径对齐**
    - `Roles.cs` 增加 `sales` / `finance` / `planner` / `operations` / `editor` / `analyst`；
-   - 前端新增 `src/utils/roles.ts` 统一导出角色常量与中文名，替换 `ExampleView` 内的 `roleLabels` 映射。
-2. **登录入口**：新增 `/login` 视图，接入 `AuthManager.Login`，用 `ProtectedRoute` 保护 `/`；补齐登录失败、注册需二次确认的提示。
+   - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
+   - 前端新增 `src/utils/roles.ts` 统一导出角色常量与中文名，替换 `ExampleView` 内的 `getRoleLabels`。
 3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。
 4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。
 
@@ -313,7 +338,11 @@ git status --ignored --short | grep -E "\.env|appsettings"
 
 ### 验收参考
 
-- 工作台所有数字来自接口，刷新后与后端一致；
-- 未登录访问 `/` 会被引导到登录页，登录后按角色进入对应默认执行列表；
-- 前后端角色清单一致，越权调用返回 403；
+- 工作台所有数字来自接口，刷新后与后端一致；每条结论都能下钻到明细记录；
+- 未登录访问 `/` 会被引导到 `/login`，飞书授权后按角色进入对应默认视图；
+- 前后端角色清单一致，越权调用返回 403；改 URL 参数看不到他人数据；
+- 未加入任何业务用户组的同事只能看、不能改；
+- 商务单走完飞书审批后列表阶段自动更新，非法流转被拒；
 - 页面不出现硬编码主题色，暗色模式下无不可读文本。
+
+完整验收清单（M3 逐条勾选）见[产品文档 · 验收标准](https://gsspai.github.io/mediaai/)。
