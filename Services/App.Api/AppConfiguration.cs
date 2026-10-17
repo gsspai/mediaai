@@ -8,7 +8,4 @@ public class AppConfiguration
     public string SupabasePublishableKey { get; set; } = string.Empty;
     public string SupabaseSecretKey { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;
-    public string DeepSeekApiKey { get; set; } = "";
-    public string DeepSeekBaseUrl { get; set; } = "";
-    public string DeepSeekModel { get; set; } = "";
 }

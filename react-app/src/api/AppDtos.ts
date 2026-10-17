@@ -4,16 +4,6 @@ export interface ChangePasswordRequestDto {
   NewPassword: string;
 }
 
-export interface DeepSeekPromptRequestDto {
-  Prompt: string;
-}
-
-export interface DeepSeekPromptResponseDto {
-  Success: boolean;
-  Message: string;
-  Output: string;
-}
-
 export interface GetSessionRequestDto {
 }
 

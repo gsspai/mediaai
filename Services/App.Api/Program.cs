@@ -183,7 +183,6 @@ namespace App.Api
         {
             // All orchestrating manager and engine registration
             services.AddScoped<AuthManager>();
-            services.AddScoped<AIManager>();
             services.AddScoped<AuthenticatorEngine>();
             services.AddScoped<UserContextService>();
 
@@ -195,13 +194,11 @@ namespace App.Api
             if (env.IsDevelopment())
             {
                 services.AddScoped<IDatabaseAccessor, LocalDatabaseAccessor>();
-                services.AddScoped<IDeepSeekAccessor, DeepSeekAccessor>();
                 services.AddScoped<IAuthAccessor, LocalAuthAccessor>();
             }
             else
             {
                 services.AddScoped<IDatabaseAccessor, DatabaseAccessor>();
-                services.AddScoped<IDeepSeekAccessor, DeepSeekAccessor>();
                 services.AddScoped<IAuthAccessor, AuthAccessor>();
             }
         }
