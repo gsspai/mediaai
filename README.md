@@ -8,6 +8,7 @@ MediaAI 面向新传媒公司的多角色协作场景：把商务合作、日常
 
 ## 目录
 
+- [文档](#文档)
 - [当前状态](#当前状态)
 - [技术栈](#技术栈)
 - [目录结构](#目录结构)
@@ -20,6 +21,23 @@ MediaAI 面向新传媒公司的多角色协作场景：把商务合作、日常
 - [安全与保密信息处理](#安全与保密信息处理)
 - [部署](#部署)
 - [下一步计划](#下一步计划)
+
+---
+
+## 文档
+
+| 文档 | 内容 | 位置 |
+| --- | --- | --- |
+| 产品文档 | 定位、角色、信息架构、界面结构、关键流程、指标口径、权限、分期、验收 | https://gsspai.github.io/mediaai/ |
+| 落地实施方案 | 数据模型、Manager 接口清单、前端改造、任务拆解与工时 | [docs/implementation-plan.md](docs/implementation-plan.md) |
+| 认证流程 | `ServiceInvoker` 的 JWT 校验与角色拦截 | [docs/service-invoker-auth-flow.md](docs/service-invoker-auth-flow.md) |
+| 流式 RPC | 流式调用的传输与生命周期 | [docs/service-invoker-streaming.md](docs/service-invoker-streaming.md) |
+
+产品文档是单文件静态页（`docs/product-overview.html`，入口页 `docs/index.html`），无构建与外部依赖，由 GitHub Pages 从 `main` 分支的 `/docs` 目录发布。
+
+首次启用：仓库 **Settings → Pages → Source 选 `Deploy from a branch` → Branch `main`、目录 `/docs` → Save**，约 1 分钟后生效。
+
+Pages 生效前可用 CDN 镜像打开同一份文件：[raw.githack 镜像](https://raw.githack.com/gsspai/mediaai/main/docs/product-overview.html)。
 
 ---
 
@@ -71,7 +89,7 @@ mediaai/
 │   ├── App.ServiceInvoker/        # RPC 路由、反射调用、鉴权
 │   ├── Contracts.Dto/             # 请求 / 响应 DTO
 │   └── Contracts.Domain/          # 领域实体与契约
-├── docs/                          # 认证与流式 RPC 说明
+├── docs/                          # 产品文档、实施方案与 RPC 说明
 └── .gitea/workflows/deploy.yml    # 部署流水线
 ```
 
@@ -260,11 +278,17 @@ git status --ignored --short | grep -E "\.env|appsettings"
 
 三个入参均由触发者在运行工作流时手动传入，不落库、不写入仓库；CORS 由 Azure 侧配置，生产环境不在应用内重复输出 CORS 头。
 
+### 文档站
+
+产品文档（`docs/`）不参与上述流水线，由 GitHub Pages 独立发布：直接托管 `main` 分支 `/docs` 下的静态文件，无构建步骤。改动文档只需推送到 `main`，Pages 会自动重新发布，通常 1 分钟内生效。
+
+注意：Pages 对 Private 仓库需付费账户；本仓库为 Public，可直接启用。
+
 ---
 
 ## 下一步计划
 
-> 完整任务拆解（M0-M4）、数据模型字段、Manager 接口清单与验收标准见 [docs/implementation-plan.md](docs/implementation-plan.md)。
+> 产品定位、角色与指标口径见[产品文档](https://gsspai.github.io/mediaai/)；完整任务拆解（M0-M4）、数据模型字段、Manager 接口清单与验收标准见 [docs/implementation-plan.md](docs/implementation-plan.md)。
 
 ### P0 — 打通「有数据、有身份」的主链路
 
