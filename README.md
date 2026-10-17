@@ -123,6 +123,8 @@ This expanded baseline gives generated apps a stronger structural vocabulary tha
 ### Managers
 - `Services/App.Api/Managers/AuthManager.cs` — auth endpoints.
   - Methods: `Login`, `SignUp`, `SendPasswordResetEmail`, `GetSession`, `ChangePassword`, `UpdateUserEmail`, `UpdateUserPassword`, `UpdateUserName`.
+- `Services/App.Api/Managers/AIManager.cs` — DeepSeek 模型调用入口。
+  - Methods: `PromptDeepSeek`.
 
 ### Engines
 - `Services/App.Api/Engines/SampleEngine.cs` — Placeholder example stateless engine; replace with real engines.
@@ -130,6 +132,7 @@ This expanded baseline gives generated apps a stronger structural vocabulary tha
 ### Accessors
 - `Services/App.Api/Accessors/DatabaseAccessor.cs` — Marten document DB operations.
 - `Services/App.Api/Accessors/AuthAccessor.cs` — Supabase auth operations.
+- `Services/App.Api/Accessors/DeepSeekAccessor.cs` — DeepSeek 聊天补全 API 调用封装。
 - `Services/App.Api/Accessors/LocalDatabaseAccessor.cs` — local alternative DB implementation, used when the app is running in Development (local) mode.
 - `Services/App.Api/Accessors/LocalAuthAccessor.cs` — local alternative auth implementation, used when the app is running in Development (local) mode.
 
@@ -177,6 +180,10 @@ Relevant files:
 
 ## Integrations
 - (External services/APIs used and what for)
+- DeepSeek API — 用于后端接入模型能力。当前已提供最小可验证入口 `AIManager.PromptDeepSeek`，后续可复用到选题建议、内容方向生成、复盘总结等业务场景。
 
 ## Configuration Keys
 - Supabase auth/storage/database config is provisioned by the StarterKit deployment/config pipeline. Do not add duplicate `SupabaseUrl` or `SupabaseJwksUrl` keys; runtime code derives auth URLs from `SupabaseId` where needed.
+- `DeepSeekApiKey`（secret）— DeepSeek API 密钥。
+- `DeepSeekBaseUrl` — DeepSeek API 基础地址，默认 `https://api.deepseek.com`。
+- `DeepSeekModel` — 默认模型名，当前为 `deepseek-chat`。
