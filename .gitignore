@@ -47,3 +47,6 @@
 /Services/App.Api/appsettings.Test.json
 
 
+
+# React app env
+react-app/.env

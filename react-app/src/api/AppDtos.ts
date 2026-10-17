@@ -1,11 +1,7 @@
+import { SampleEnum } from "./Enums";
 
 export interface ChangePasswordRequestDto {
   NewPassword: string;
-}
-
-export interface CreateUserRequest {
-  Name: string;
-  Email: string;
 }
 
 export interface GetSessionRequestDto {
@@ -37,7 +33,7 @@ export interface SendPasswordResetRequestDto {
 export interface ServiceInvocationRequestDto {
   ManagerName: string;
   MethodName: string;
-  Parameters: any[] | null;
+  Parameters: (any | null)[] | null;
   AccessToken: string | null;
   RefreshToken: string | null;
 }
@@ -52,7 +48,7 @@ export interface ServiceInvocationResponseEnvelopeDto {
 export interface ServiceStreamingRequestDto {
   ManagerName: string;
   MethodName: string;
-  Parameters: any[] | null;
+  Parameters: (any | null)[] | null;
   AccessToken: string | null;
   RefreshToken: string | null;
 }
@@ -111,3 +107,4 @@ export interface UpdateUserPasswordResponseDto {
   Success: boolean;
   Message: string;
 }
+

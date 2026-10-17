@@ -3,6 +3,7 @@ import ExampleView from '@/views/ExampleView';
 import NotFoundView from '@/views/NotFoundView';
 import ProtectedRoute from '@/routes/ProtectedRoute';
 import UnauthorizedView from '@/views/UnauthorizedView';
+import WorkspaceDetailPlaceholderView from '@/views/WorkspaceDetailPlaceholderView';
 
 /**
  * Minimal starter route table.
@@ -15,6 +16,11 @@ const AppRoutes = () => {
       <Routes>
         <Route index element={<ExampleView />} />
         <Route path="/unauthorized" element={<UnauthorizedView />} />
+        <Route path="/business" element={<WorkspaceDetailPlaceholderView />} />
+        <Route path="/business/:dealId" element={<WorkspaceDetailPlaceholderView />} />
+        <Route path="/plans/:planId" element={<WorkspaceDetailPlaceholderView />} />
+        <Route path="/connections/:platform" element={<WorkspaceDetailPlaceholderView />} />
+        <Route path="/analysis/:viewId" element={<WorkspaceDetailPlaceholderView />} />
 
         {/**
           Example of protecting a route:
