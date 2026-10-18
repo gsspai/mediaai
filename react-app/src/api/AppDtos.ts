@@ -108,3 +108,57 @@ export interface UpdateUserPasswordResponseDto {
   Message: string;
 }
 
+
+export interface GetDashboardSummaryRequestDto {
+  Days: number;
+}
+
+export interface DashboardTotalsDto {
+  Views: number;
+  Interactions: number;
+  NewFollowers: number;
+  InteractionRate: number;
+}
+
+export interface DashboardKpiDto {
+  Key: string;
+  Label: string;
+  Display: string;
+  Unit: string;
+  Detail: string;
+  IsText: boolean;
+  Status: 'ready' | 'pending';
+  Trace: string;
+}
+
+export interface DashboardTrendPointDto {
+  Label: string;
+  Views: number;
+  Comments: number;
+  Shares: number;
+}
+
+export interface DashboardPlatformTrendDto {
+  Platform: string;
+  Points: DashboardTrendPointDto[];
+  ChangeRate: string;
+  Tone: string;
+}
+
+export interface DashboardDataSourceDto {
+  ManualCount: number;
+  ApiCount: number;
+  SeedCount: number;
+  Label: string;
+}
+
+export interface DashboardSummaryDto {
+  RangeStart: string;
+  RangeEnd: string;
+  HasData: boolean;
+  AccountCount: number;
+  Totals: DashboardTotalsDto;
+  Kpis: DashboardKpiDto[];
+  PlatformTrends: DashboardPlatformTrendDto[];
+  DataSource: DashboardDataSourceDto;
+}

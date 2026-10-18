@@ -7,8 +7,11 @@ import TrendChart, { TrendLegend, type TrendPoint } from '@/components/dashboard
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import DashboardManager from '@/api/DashboardManager';
+import type { DashboardSummaryDto } from '@/api/AppDtos';
 import useAuthStore from '@/auth/AuthStore';
 import { formatCompactNumber } from '@/lib/format';
+import { getPlatformLabel } from '@/utils/platforms';
 import {
   ADMIN_ROLE,
   ANALYST_ROLE,
@@ -32,22 +35,30 @@ const workspaceTabs = [
 
 type WorkspaceTab = (typeof workspaceTabs)[number]['value'];
 
-type MetricCard = {
+type MetricCardView = {
+  key: string;
   label: string;
   value: string;
   unit?: string;
   detail: string;
   isTextValue?: boolean;
+  /** 回溯说明：这个数字来自哪些账号、多少条日记录 */
+  trace: string;
+  pending?: boolean;
 };
 
-const metricCards: MetricCard[] = [
-  { label: '最强平台', value: '抖音', detail: '播放 +32%', isTextValue: true },
-  { label: '风险平台', value: '微博', detail: '3 条限流', isTextValue: true },
-  { label: '爆款内容', value: '5', unit: '条', detail: '+2 今日新增' },
-  { label: '同步异常', value: '2', unit: '项', detail: '待修复' },
+/**
+ * 接口不可用时的兜底展示。这里的数据一律标为「静态示例数据」，
+ * 不与接口返回的真实聚合混在一起，避免看着像真数据。
+ */
+const fallbackMetricCards: MetricCardView[] = [
+  { key: 'top-platform', label: '最强平台', value: '抖音', detail: '播放 +32%', isTextValue: true, trace: '静态示例数据 · 接口未连接' },
+  { key: 'declining-platform', label: '下滑平台', value: '微博', detail: '日均 -31%', isTextValue: true, trace: '静态示例数据 · 接口未连接' },
+  { key: 'total-views', label: '总播放', value: '52.4', unit: '万', detail: '互动率 9.8%', trace: '静态示例数据 · 接口未连接' },
+  { key: 'new-followers', label: '新增粉丝', value: '1,284', unit: '人', detail: '净增', trace: '静态示例数据 · 接口未连接' },
 ];
 
-const platformSeries: { platform: string; tone: StatusTone; points: TrendPoint[] }[] = [
+const fallbackPlatformSeries: { platform: string; tone: StatusTone; points: TrendPoint[] }[] = [
   {
     platform: '抖音',
     tone: 'success',
@@ -137,10 +148,67 @@ const HomeView = () => {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('business');
   const [isTabPinned, setIsTabPinned] = useState(false);
 
+  const [summary, setSummary] = useState<DashboardSummaryDto | null>(null);
+  const [summaryStatus, setSummaryStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [summaryReloadKey, setSummaryReloadKey] = useState(0);
+
   useEffect(() => {
     if (isTabPinned) return;
     setActiveTab(getDefaultTab(roleKey ? roleKey.split(',') : []));
   }, [roleKey, isTabPinned]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSummaryStatus('loading');
+
+    DashboardManager.GetSummary({ Days: 7 })
+      .then((data) => {
+        if (cancelled) return;
+        setSummary(data);
+        setSummaryStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSummaryStatus('error');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [summaryReloadKey]);
+
+  const metricViews: MetricCardView[] = summary
+    ? summary.Kpis.map((kpi) => ({
+        key: kpi.Key,
+        label: kpi.Label,
+        // 平台类指标后端给的是标识（douyin），展示层统一映射为中文名
+        value: kpi.IsText ? getPlatformLabel(kpi.Display) : kpi.Display,
+        unit: kpi.Unit || undefined,
+        detail: kpi.Detail,
+        isTextValue: kpi.IsText,
+        trace: kpi.Trace,
+        pending: kpi.Status === 'pending',
+      }))
+    : fallbackMetricCards;
+
+  const trendViews = summary
+    ? summary.PlatformTrends.map((trend) => ({
+        platform: getPlatformLabel(trend.Platform),
+        tone: (trend.Tone as StatusTone) ?? 'info',
+        changeRate: trend.ChangeRate,
+        points: trend.Points.slice(-5).map((point) => ({
+          label: point.Label,
+          views: point.Views,
+          comments: point.Comments,
+          shares: point.Shares,
+        })),
+      }))
+    : fallbackPlatformSeries.map((item) => ({
+        platform: item.platform,
+        tone: item.tone,
+        changeRate: changeRate(item.points),
+        points: item.points,
+      }));
 
   return (
     <PageShell>
@@ -195,21 +263,24 @@ const HomeView = () => {
           </div>
 
           <div className="grid gap-px border-t border-primary-foreground/10 bg-primary-foreground/10 p-px sm:grid-cols-2 lg:border-l lg:border-t-0">
-            {metricCards.map((item) => (
-              <div key={item.label} className="flex min-h-[148px] flex-col justify-between gap-5 bg-primary px-6 py-6">
+            {metricViews.map((item) => (
+              <div key={item.key} className="flex min-h-[168px] flex-col justify-between gap-4 bg-primary px-6 py-6">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-primary-foreground/65">{item.label}</p>
                   <StatusPill appearance="inverse">{item.detail}</StatusPill>
                 </div>
-                <div className="flex items-baseline gap-1.5">
-                  <span
-                    className={`font-semibold leading-none tracking-tight tabular-nums ${
-                      item.isTextValue ? 'text-4xl' : 'text-5xl'
-                    }`}
-                  >
-                    {item.value}
-                  </span>
-                  {item.unit ? <span className="text-sm text-primary-foreground/60">{item.unit}</span> : null}
+                <div className="space-y-2">
+                  <div className={`flex items-baseline gap-1.5 ${item.pending ? 'opacity-60' : ''}`}>
+                    <span
+                      className={`font-semibold leading-none tracking-tight tabular-nums ${
+                        item.isTextValue ? 'text-4xl' : 'text-5xl'
+                      }`}
+                    >
+                      {item.value}
+                    </span>
+                    {item.unit ? <span className="text-sm text-primary-foreground/60">{item.unit}</span> : null}
+                  </div>
+                  <p className="text-[10px] leading-4 text-primary-foreground/40">{item.trace}</p>
                 </div>
               </div>
             ))}
@@ -217,26 +288,40 @@ const HomeView = () => {
         </div>
       </section>
 
+      {summaryStatus === 'error' ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm leading-6 text-destructive">
+          <span>工作台数据没有加载成功，当前显示的是静态示例数据。</span>
+          <Button variant="outline" size="sm" onClick={() => setSummaryReloadKey((value) => value + 1)}>
+            重试
+          </Button>
+        </div>
+      ) : null}
+
+      {summary ? (
+        <p className="text-xs leading-6 text-muted-foreground">
+          数据来源：{summary.DataSource.Label}（{summary.RangeStart} 至 {summary.RangeEnd}）
+        </p>
+      ) : null}
+
       <Panel>
         <PanelHeader
           eyebrow="平台态势"
-          title="最近 5 条更新"
-          description="三条指标各自按自身峰值归一化，用于比较走势形状；具体数值见指标卡。"
+          title="最近 5 天"
+          description="三条指标各自按自身峰值归一化，用于比较走势形状；具体数值见指标卡，环比按日均播放计算。"
           actions={<TrendLegend />}
         />
         <PanelBody className="grid gap-4 lg:grid-cols-3">
-          {platformSeries.map((item) => {
+          {trendViews.map((item) => {
             const latest = item.points[item.points.length - 1];
-            const rate = changeRate(item.points);
 
             return (
               <article key={item.platform} className="rounded-2xl border border-border/60 bg-background/60 p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-base font-semibold tracking-tight">{item.platform}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">最近 {item.points.length} 条更新</p>
+                    <p className="mt-1 text-xs text-muted-foreground">最近 {item.points.length} 天</p>
                   </div>
-                  <StatusPill tone={item.tone}>{rate}</StatusPill>
+                  <StatusPill tone={item.tone}>{item.changeRate}</StatusPill>
                 </div>
 
                 <TrendChart className="mt-4" points={item.points} platform={item.platform} />

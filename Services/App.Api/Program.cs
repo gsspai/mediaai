@@ -96,6 +96,20 @@ namespace App.Api
 
             app.MapGet("/api/health", () => Results.Ok(new { Status = "ok" })).AllowAnonymous();
 
+            // Development only: write a clearly-labelled demo dataset so the dashboard has real rows to aggregate.
+            if (app.Environment.IsDevelopment())
+            {
+                try
+                {
+                    using var seedScope = app.Services.CreateScope();
+                    seedScope.ServiceProvider.GetRequiredService<DashboardSeeder>().SeedAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Dashboard seed skipped");
+                }
+            }
+
             // Start the API, robust error logging via Serilog
             try
             {
@@ -183,6 +197,8 @@ namespace App.Api
         {
             // All orchestrating manager and engine registration
             services.AddScoped<AuthManager>();
+            services.AddScoped<DashboardManager>();
+            services.AddScoped<DashboardSeeder>();
             services.AddScoped<AuthenticatorEngine>();
             services.AddScoped<UserContextService>();
 

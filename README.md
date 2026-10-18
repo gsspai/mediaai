@@ -45,17 +45,18 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 工作台首页（`/`） | 已完成（静态） | 平台态势、爆款机会、限流风险、执行列表、管理层概览 |
+| 工作台首页（`/`） | 已完成（指标卡接接口） | 四个 KPI 与平台走势来自 `DashboardManager.GetSummary`；爆款机会、限流风险、执行列表仍是前端数据 |
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
 | 详情页 | 占位 | `/business`、`/plans/:planId`、`/connections/:platform`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
-| 业务接口 | 未开始 | 尚无 Dashboard / 商务 / 计划 / 连接 / 分析的 Manager 与 DTO |
+| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、数据来源）；商务 / 计划 / 连接 / 分析尚无 Manager |
+| 数据模型 | 已建立 | `PlatformAccount`（平台账号）、`MetricDaily`（日指标快照，含 `Source` 与 `RecordedBy`） |
 | 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
 
-> 工作台中的平台、账号、合作单数据均为演示数据，集中在 `react-app/src/views/ExampleView.tsx` 顶部的常量中，接入接口时整体替换。
+> 首页 KPI 卡与平台走势已改由接口返回，文案里的「数据来源」行会标明是接口同步、手工录入还是开发态种子数据，种子数据的每张卡也写明来源。爆款机会、限流风险、执行列表、合作单仍是 `react-app/src/views/ExampleView.tsx` 中的演示数据，后续按模块逐个替换。
 
 ---
 
@@ -202,6 +203,21 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 详见 [docs/service-invoker-auth-flow.md](docs/service-invoker-auth-flow.md) 与 [docs/service-invoker-streaming.md](docs/service-invoker-streaming.md)。
 
+### 看板指标与数据模型
+
+`DashboardManager.GetSummary({ Days })` 返回首页四个 KPI、平台走势与数据来源说明，`Days` 会被钳制在 3–90 天。
+
+| 文档 | 作用 | 关键字段 |
+| --- | --- | --- |
+| `PlatformAccount` | 平台账号 | `Platform`、`Handle`、`Status`（`connected` / `manual` / `paused` / `error`）、`FollowerCount`、`OwnerId` |
+| `MetricDaily` | 每个账号每天的指标快照 | `AccountId`、`Platform`、`StatDate`、`Views` / `Likes` / `Comments` / `Shares`、`NewFollowers`、`Source`、`RecordedBy`、`RecordedAt` |
+
+- `MetricDaily.Source` 取 `api`（平台接口同步）/ `manual`（人工录入）/ `seed`（开发态种子），返回体里的 `DataSource` 会把三者计数摊开，界面直接显示「开发态示例数据 · 5 个账号 / 35 条日记录」这类文案。**新增数据入口时必须写入 `Source` 与 `RecordedBy`，否则数字无法回溯。**
+- 环比口径：把一个区间对半切成前段与后段，用**日均播放**比较（`DailyChangeRate`），而不是两段总量——7 天区间前 3 天后 4 天，用总量比会系统性低估后段。
+- 无数据时不报错：`HasData = false`，四个 KPI 返回 `"—"` 与 `Status = pending`，界面同时展示「静态示例数据」标记，避免把占位值当成真实数据。
+
+开发态种子数据只在 `ASPNETCORE_ENVIRONMENT=Development` 且库中**没有任何** `MetricDaily` 时写入一次（`Utilities/DashboardSeeder.cs`）。想回到初始状态，删掉本地数据目录下的 `PlatformAccount.json` 与 `MetricDaily.json` 后重启后端。
+
 ---
 
 ## 角色与权限
@@ -320,7 +336,7 @@ git status --ignored --short | grep -E "\.env|appsettings"
 2. **角色口径对齐**
    - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
    - 业务接口按权限矩阵挂 `[RequireRole(...)]`。
-3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。
+3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 四个 KPI 与平台走势已完成，机会/风险、待办、合作单摘要待补）
 4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。
 
 ### P1 — 让页面「可用、可信」

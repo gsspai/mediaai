@@ -16,7 +16,7 @@
 - 前端角色显示名、页面 meta、`.env.example` 描述已同步。
 - 本地开发未受任何影响；后端代码本次未改动。
 
-**未开始**：飞书免登、业务角色落地、真实接口。产品仍是「前端静态原型 + 后端认证骨架」。
+**未开始**：飞书免登、业务角色落地（`[RequireRole]`）。首页四个 KPI 与平台走势已接真实接口，其余区块仍是演示数据。
 
 ---
 
@@ -84,6 +84,29 @@
 - 端到端实测（CDP 驱动无头 Chrome）：未登录访问 `/business` → `/login` → 填表登录 → 回 `/business`；首页显示「访客」徽章与邮箱；点「退出」→ `/login`。
 - 本地测试账号：`demo@mediaai.local` / `demo12345`，`Roles: ["user"]`，界面上按访客只读显示。
 
+### 2.6 首页接真实接口（P0 第 2 步，本轮）
+
+代码：
+
+- 新增 Marten 文档 `Services/Contracts.Domain/Database/PlatformAccount.cs`（`Platform` / `Handle` / `Status` / `FollowerCount` / `OwnerId`，状态枚举 `connected` / `manual` / `paused` / `error`）。
+- 新增 `Services/Contracts.Domain/Database/MetricDaily.cs`（`AccountId` / `Platform` / `StatDate` / `Views` / `Likes` / `Comments` / `Shares` / `NewFollowers` / `Source` / `RecordedBy` / `RecordedAt`）。
+- 新增 `Services/Contracts.Dto/DashboardSummaryDto.cs` 与 `GetDashboardSummaryRequestDto.cs`；`RangeStart`/`RangeEnd` 用 `string`（`yyyy-MM-dd`），DTO 层不引入 `DateOnly`。
+- 新增 `Services/App.Api/Managers/DashboardManager.cs`：`[RequireAuthenticated] GetSummary`，返回四个 KPI（`top-platform` / `declining-platform` / `total-views` / `new-followers`）、平台走势（前 3）、`DataSource` 计数。
+- 新增 `Services/App.Api/Utilities/PlatformAggregate.cs`：`App.Api.Managers` 命名空间下所有类型都会被当成 `IManagerService` 扫描，聚合用的内部类必须放到 `Utilities`。
+- 新增 `Services/App.Api/Utilities/DashboardSeeder.cs` + `Program.cs` 启动钩子：仅 Development、仅当库中无 `MetricDaily` 时写入 5 个账号 × 7 天 = 35 条，`Source = Seed`、`RecordedBy = seed:development`。
+- 前端新增 `src/api/DashboardManager.ts`、`src/utils/platforms.ts`（平台英文标识 → 中文名），`src/api/AppDtos.ts` 追加 7 个 DTO。
+- `src/views/ExampleView.tsx`：删除硬编码 `metricCards` / `platformSeries`，改为 `fallbackMetricCards` / `fallbackPlatformSeries`（每条 `trace` 写「静态示例数据 · 接口未连接」）；新增 `summary` / `summaryStatus` / `summaryReloadKey`，错误时红色横幅带重试按钮；KPI 卡加 `trace` 行与 `min-h-[168px]`，`pending` 时 `opacity-60`。
+
+口径修正：
+
+- 初版环比用前后两段**总量**比较，7 天区间前 3 后 4 天，结果系统性偏高（微博 -47%）。改为**日均播放**对比（`DailyChangeRate`），修正为 -31%，文案改「日均环比」「前 3 天与后 4 天的日均播放对比」。
+
+验证：
+
+- `dotnet build Services/Services.sln` 0 错误；`npx tsc --noEmit` 0 错误；`npx vitest run --mode test` 8 条通过。
+- CDP 驱动无头 Chrome 实测：未登录 `/business` → `/login` → 登录 → 回 `/business`；首页输出 `hasRealSource: true` / `hasFallback: false` / `hasErrorBanner: false`，读数「最强平台 96.9 万 抖音」「下滑平台 -31% 微博」「总播放 214 万 / 互动率 10.1%」「新增粉丝 3,426」「数据来源：开发态示例数据 · 5 个账号 / 35 条日记录（2026-10-12 至 2026-10-18）」。
+- `npm run lint` 仍因仓库缺 `typescript-eslint` 报 `ERR_MODULE_NOT_FOUND`（既有问题，非本轮引入），已用 `tsc` + `vitest` 替代。
+
 ---
 
 ## 3. 遗留问题
@@ -93,7 +116,7 @@
 | 1 | `/analysis/:viewId` 路由去留未定 | 产品文档只有 6 个页面，此路由无对应页面，代码仍指向占位视图 | **待用户决定** |
 | 2 | 业务角色已定义，但没有任何接口挂 `[RequireRole(...)]` | 权限矩阵尚未生效，越权访问仍可能通过 | 待做（随接口落地） |
 | 3 | 飞书免登未接入 | `/auth/feishu/callback` 与 `FeishuManager` 不存在，登录页只支持账号密码 | 待做（P0） |
-| 4 | 首页数据仍是前端常量 | 刷新后与后端不一致，无法通过验收第 1 条 | 待做 |
+| 4 | 首页四个 KPI 与平台走势已接接口，其余区块（爆款机会、限流风险、执行列表、合作单）仍是前端常量 | 验收第 1 条对首页指标已成立；下钻明细仍无 | 部分完成 |
 | 5 | ~~`/` 未挂 `ProtectedRoute`~~ | 已完成 | ✅ |
 | 6 | 无任何自动化测试与 CI | 改动靠人工验证 | 未规划 |
 | 7 | 推文文案只存在于对话中 | X / Facebook 两版成稿未落文件，若要发布需重新生成 | 未落地 |
@@ -106,8 +129,13 @@
 
 按依赖顺序，建议：
 
-1. **首页接真实接口**（下一步）：`DashboardManager` + DTO，先接四个指标卡，验收第 1 条随之成立
-2. **数据模型**：`PlatformAccount` + `Metric` 两个 Marten 文档
+1. ~~**首页接真实接口**：`DashboardManager` + DTO，先接四个指标卡~~ — 已完成（见 2.6）
+2. ~~**数据模型**：`PlatformAccount` + `MetricDaily`~~ — 已完成（见 2.6）
+
+接下来，建议按以下顺序：
+
+1. **手工录入 / 接口同步入口**（下一步）：`MetricDaily` 已有 `Source` + `RecordedBy`，但还**没有写入路径**，种子数据是唯一数据来源。最小闭环是 `MetricManager.UpsertDaily`（人工录入某账号某天）与 `PlatformAccountManager` 的增删改查，界面上放在「平台连接」页。
+2. **首页剩余区块接接口**：爆款机会、限流风险、执行列表、合作单摘要，补齐 `GetSummary` 或拆成独立方法；每块都要给出可下钻的明细。
 3. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
 4. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
 5. **`/analysis/:viewId` 去留**（一行决定，可随时处理）
@@ -123,12 +151,16 @@
 - **`docs/index.html` 是 `docs/product-overview.html` 的副本**。改完正文必须执行 `cp docs/product-overview.html docs/index.html`，否则首页不变。这是本次最容易漏的一步。
 - Pages 从 `main` 的 `/docs` 目录发布，`/docs` 下**任何**新增文件都会被公开，不要放草稿。
 - `.gitignore` 已排除 `.env`、`appsettings.*.json`、`local-signing.key`。
+- **`App.Api.Managers` 命名空间下只放 Manager**：反射会扫描该命名空间的 `IManagerService`，任何辅助类（如聚合用的 `PlatformAggregate`）必须放到 `Utilities`，静态工具类同样会被当文档类型扫描。
+- 调 `/Api/invoke` 时 **`AccessToken` 与 `RefreshToken` 必须同时带**，只给 `AccessToken` 会失败（与 `AuthManager.Login` 返回一致）。
 
 ### 5.2 本地环境
 
 - 预览服务：在 `docs/` 下跑 `python3 -m http.server 4174`，访问 `http://localhost:4174/product-overview.html`。**该进程可能仍在后台运行**，端口冲突时先 `lsof -ti:4174 | xargs kill`。
 - 无头截图 / 布局度量：`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --headless=new --dump-dom`，配合同源 iframe 探针可读取 `scrollWidth` 实测溢出（探针文件用完即删）。
 - 推送凭据由 IDE 临时注入，**不可用于 GitHub Settings API**；机器上无 gh CLI token、无钥匙串凭据、无 `GITHUB_TOKEN`、无 `~/.netrc`。需要改仓库设置时只能人工操作。
+- 改完后端不想打扰正在跑的 `https://localhost:5123`：用 `dotnet run --no-build --urls https://localhost:5124` 起一个独立实例验证，验完 kill 掉。前端 `react-app/.env` 的 `VITE_API_URL` 指向验证实例时，**验完必须改回 5123**。
+- 重置开发态种子数据：删掉本地数据目录下 `PlatformAccount.json` 与 `MetricDaily.json`（路径含 `AppConfiguration__AppName`，默认 `~/CodeBuddy/Resources/MediaAI/` 附近），重启后端即重新生成 5 个账号 × 7 天。
 
 ### 5.3 口径约定（后续改动请沿用）
 
