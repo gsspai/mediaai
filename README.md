@@ -49,10 +49,10 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
-| 详情页 | 占位 | `/business`、`/plans/:planId`、`/connections/:platform`、`/analysis/:viewId` 指向占位视图；`/login`、`/settings` 尚未建立 |
+| 详情页 | 占位 | `/business`、`/plans/:planId`、`/connections/:platform`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
 | 业务接口 | 未开始 | 尚无 Dashboard / 商务 / 计划 / 连接 / 分析的 Manager 与 DTO |
-| 登录页 | 未开始 | 目前没有登录 UI，工作台按匿名或已存会话渲染 |
+| 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
 
 > 工作台中的平台、账号、合作单数据均为演示数据，集中在 `react-app/src/views/ExampleView.tsx` 顶部的常量中，接入接口时整体替换。
@@ -221,7 +221,7 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 角色不在本系统维护名单：以飞书用户组为准，入组即得权限、离组即失权，映射关系存 `RoleMappingConfig`。
 
-> **已知不一致**：后端 `Services/App.Api/Utilities/Roles/Roles.cs` 目前只定义 `admin` / `user` / `authenticated`，上述业务角色尚未落地，`[RequireRole("finance")]` 这类标记暂时无效；前端 `ExampleView.tsx` 的角色显示名已按上表更新。这是下一步 P0 项。
+> 角色常量已在后端 `Services/App.Api/Utilities/Roles/Roles.cs` 与前端 `src/utils/roles.ts` 两处落地，改一处必须同时改另一处。当前尚无业务接口挂 `[RequireRole(...)]`，权限矩阵待接口落地后逐条接入。
 
 ---
 
@@ -231,8 +231,8 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 | 路径 | 页面 | 状态 |
 | --- | --- | --- |
-| `/` | 工作台首页（Dashboard） | 静态实现；尚未挂 `ProtectedRoute` |
-| `/login` | 登录（飞书免登） | 未建立 |
+| `/` | 工作台首页（Dashboard） | 静态实现；已挂 `ProtectedRoute` |
+| `/login` | 登录 | 已实现（账号密码）；飞书免登待接入 |
 | `/business` | 商务合作列表 | 占位 |
 | `/business/:dealId` | 合作单详情 | 占位 |
 | `/plans` | 内容计划列表 | 未建立（仅有详情占位） |
@@ -244,7 +244,7 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 | `/unauthorized` | 无权限 | 已统一文案与样式 |
 | `*` | 404 | 已统一文案与样式 |
 
-`ProtectedRoute`（`react-app/src/routes/ProtectedRoute.tsx`）负责受保护路由的会话水合：无 token → 跳转 `/unauthorized`；有 token 无 session → 调用 `AuthManager.GetSession`；超时 → 重试 / 退出登录。
+`ProtectedRoute`（`react-app/src/routes/ProtectedRoute.tsx`）负责受保护路由的会话水合：无 token → 跳转 `/login` 并携带来源路径，登录后回到原处；有 token 无 session → 调用 `AuthManager.GetSession`；超时 → 重试 / 重新登录。
 
 ---
 
@@ -316,11 +316,10 @@ git status --ignored --short | grep -E "\.env|appsettings"
 
 ### P0 — 打通「有数据、有身份」的主链路
 
-1. **飞书免登**：新增 `/login`（跳转飞书授权）与 `/auth/feishu/callback` 两个入口，由 `FeishuManager.ExchangeCode` 换 `open_id` 并签发本系统 JWT，`/` 挂上 `ProtectedRoute`；飞书凭据只走 `Feishu__*` 环境变量，token 不下发浏览器。
+1. **飞书免登**：登录页并列飞书入口，新增 `/auth/feishu/callback`，由 `FeishuManager.ExchangeCode` 换 `open_id` 并签发本系统 JWT；飞书凭据只走 `Feishu__*` 环境变量，token 不下发浏览器。（账号密码登录与 `ProtectedRoute` 已完成）
 2. **角色口径对齐**
-   - `Roles.cs` 增加 `sales` / `finance` / `planner` / `operations` / `editor` / `analyst`；
    - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
-   - 前端新增 `src/utils/roles.ts` 统一导出角色常量与中文名，替换 `ExampleView` 内的 `getRoleLabels`。
+   - 业务接口按权限矩阵挂 `[RequireRole(...)]`。
 3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。
 4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。
 

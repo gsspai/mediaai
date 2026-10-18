@@ -9,6 +9,17 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import useAuthStore from '@/auth/AuthStore';
 import { formatCompactNumber } from '@/lib/format';
+import {
+  ADMIN_ROLE,
+  ANALYST_ROLE,
+  EDITOR_ROLE,
+  FINANCE_ROLE,
+  OPERATIONS_ROLE,
+  PLANNER_ROLE,
+  SALES_ROLE,
+  getRoleLabels,
+  hasRole,
+} from '@/utils/roles';
 import { Activity, ArrowRight, CalendarRange, Flame, Sparkles, Siren, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -117,10 +128,11 @@ const changeRate = (points: TrendPoint[]) => {
 
 const HomeView = () => {
   const session = useAuthStore((state) => state.session);
+  const signOut = useAuthStore((state) => state.signOut);
   const roles = session?.Roles ?? [];
   const roleKey = roles.join(',');
   const roleLabels = getRoleLabels(roles);
-  const isManagement = roles.includes('admin');
+  const isManagement = hasRole(roles, ADMIN_ROLE);
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('business');
   const [isTabPinned, setIsTabPinned] = useState(false);
@@ -139,10 +151,22 @@ const HomeView = () => {
             <div className="pointer-events-none absolute right-16 top-10 size-40 rounded-full border border-primary-foreground/10" />
 
             <div className="relative space-y-4">
-              <div className="flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.24em] text-primary-foreground/55">
-                <span>MediaAI</span>
-                <span className="size-1 rounded-full bg-primary-foreground/30" />
-                <span>Operations Cockpit</span>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.24em] text-primary-foreground/55">
+                  <span>MediaAI</span>
+                  <span className="size-1 rounded-full bg-primary-foreground/30" />
+                  <span>Operations Cockpit</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 text-[11px] text-primary-foreground/45">
+                  {session?.Email ? <span className="hidden sm:inline">{session.Email}</span> : null}
+                  <button
+                    type="button"
+                    onClick={signOut}
+                    className="rounded-full border border-primary-foreground/20 px-2.5 py-1 leading-none transition-colors hover:bg-primary-foreground/10 hover:text-primary-foreground"
+                  >
+                    退出
+                  </button>
+                </div>
               </div>
               <h1 className="max-w-2xl text-4xl font-semibold leading-[1.08] tracking-tight sm:text-5xl lg:text-6xl">
                 Dashboard
@@ -464,31 +488,17 @@ const MetricTile = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
-const getRoleLabels = (roles: string[]) => {
-  if (roles.length === 0) return ['访客'];
-  return roles.map((role) => {
-    if (role === 'admin') return '管理员';
-    if (role === 'finance') return '财务';
-    if (role === 'planner') return '策划';
-    if (role === 'operations') return '运营';
-    if (role === 'editor') return '剪辑';
-    if (role === 'analyst') return '分析';
-    if (role === 'sales') return '商务';
-    return role;
-  });
-};
-
 /** 按角色优先级决定默认执行列表；与后端角色清单保持一致，未知角色回落到商务合作。 */
 const getDefaultTab = (roles: string[]): WorkspaceTab => {
   const priority: WorkspaceTab[] = ['business', 'plans', 'todo'];
   const roleToTab: Record<string, WorkspaceTab> = {
-    finance: 'todo',
-    planner: 'plans',
-    operations: 'plans',
-    editor: 'plans',
-    analyst: 'plans',
-    sales: 'business',
-    admin: 'business',
+    [FINANCE_ROLE]: 'todo',
+    [PLANNER_ROLE]: 'plans',
+    [OPERATIONS_ROLE]: 'plans',
+    [EDITOR_ROLE]: 'plans',
+    [ANALYST_ROLE]: 'plans',
+    [SALES_ROLE]: 'business',
+    [ADMIN_ROLE]: 'business',
   };
 
   for (const tab of priority) {

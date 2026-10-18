@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom';
 import AuthManager from '@/api/AuthManager';
 import useAuthStore from '@/auth/AuthStore';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,7 @@ const ProtectedRoute = ({ roles }: ProtectedRouteProps) => {
   const signOut = useAuthStore((state) => state.signOut);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const location = useLocation();
 
   useEffect(() => {
     if (!accessToken || !refreshToken || session) {
@@ -55,7 +56,7 @@ const ProtectedRoute = ({ roles }: ProtectedRouteProps) => {
   }, [accessToken, refreshToken, session, retryKey]);
 
   if (!accessToken || !refreshToken) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/login" replace state={{ from: `${location.pathname}${location.search}` }} />;
   }
 
   if (!session) {
@@ -70,11 +71,12 @@ const ProtectedRoute = ({ roles }: ProtectedRouteProps) => {
               {error}
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => setRetryKey((value) => value + 1)}>
-                Retry
+              <Button onClick={() => setRetryKey((value) => value + 1)}>重试</Button>
+              <Button variant="outline" asChild>
+                <Link to="/login">重新登录</Link>
               </Button>
-              <Button variant="outline" onClick={signOut}>
-                Sign out
+              <Button variant="ghost" onClick={signOut}>
+                退出
               </Button>
             </div>
           </section>
@@ -89,7 +91,7 @@ const ProtectedRoute = ({ roles }: ProtectedRouteProps) => {
             aria-hidden="true"
             className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary"
           />
-          <p>Loading...</p>
+          <p>正在恢复登录状态…</p>
         </div>
       </main>
     );
