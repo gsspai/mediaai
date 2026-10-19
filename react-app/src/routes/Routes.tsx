@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import ConnectionsView from '@/views/ConnectionsView';
 import ExampleView from '@/views/ExampleView';
 import LoginView from '@/views/LoginView';
 import NotFoundView from '@/views/NotFoundView';
@@ -22,6 +23,7 @@ const AppRoutes = () => {
           <Route path="/business" element={<WorkspaceDetailPlaceholderView />} />
           <Route path="/business/:dealId" element={<WorkspaceDetailPlaceholderView />} />
           <Route path="/plans/:planId" element={<WorkspaceDetailPlaceholderView />} />
+          <Route path="/connections" element={<ConnectionsView />} />
           <Route path="/connections/:platform" element={<WorkspaceDetailPlaceholderView />} />
           <Route path="/analysis/:viewId" element={<WorkspaceDetailPlaceholderView />} />
         </Route>

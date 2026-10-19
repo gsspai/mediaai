@@ -207,7 +207,7 @@ namespace App.Api.Managers
             var seed = metrics.Count(metric => metric.Source == MetricSource.Seed);
 
             var parts = new List<string>();
-            if (seed > 0) parts.Add("开发态示例数据");
+            if (seed > 0) parts.Add(manual + api == 0 ? "开发态示例数据" : "含开发态示例数据");
             if (manual > 0) parts.Add($"手工录入 {manual} 条");
             if (api > 0) parts.Add($"接口同步 {api} 条");
 

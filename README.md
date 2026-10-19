@@ -49,9 +49,10 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
-| 详情页 | 占位 | `/business`、`/plans/:planId`、`/connections/:platform`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
+| 平台连接页（`/connections`） | 已完成（手工模式） | 账号增删改查、停用、手工录入日指标、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
+| 详情页 | 占位 | `/business`、`/plans/:planId`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
-| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、数据来源）；商务 / 计划 / 连接 / 分析尚无 Manager |
+| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号与手工录入；商务 / 计划 / 分析尚无 Manager |
 | 数据模型 | 已建立 | `PlatformAccount`（平台账号）、`MetricDaily`（日指标快照，含 `Source` 与 `RecordedBy`） |
 | 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
@@ -217,6 +218,23 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 - 无数据时不报错：`HasData = false`，四个 KPI 返回 `"—"` 与 `Status = pending`，界面同时展示「静态示例数据」标记，避免把占位值当成真实数据。
 
 开发态种子数据只在 `ASPNETCORE_ENVIRONMENT=Development` 且库中**没有任何** `MetricDaily` 时写入一次（`Utilities/DashboardSeeder.cs`）。想回到初始状态，删掉本地数据目录下的 `PlatformAccount.json` 与 `MetricDaily.json` 后重启后端。
+
+### 账号与录入接口
+
+| 方法 | 作用 | 说明 |
+| --- | --- | --- |
+| `PlatformAccountManager.ListAccounts` | 账号列表 | 默认过滤 `paused`；带最近记录日期与近 7 天条数 |
+| `PlatformAccountManager.SaveAccount` | 新增 / 编辑 | 同一平台下 `Handle` 唯一；已有日记录的账号不允许改平台 |
+| `PlatformAccountManager.DisableAccount` | 停用 | 只改状态不删数据，历史记录仍参与回溯 |
+| `MetricManager.IngestManual` | 手工录入单日指标 | 同账号同日按覆盖；写 `Source = manual` 与当前登录邮箱 |
+| `MetricManager.ListRecentMetrics` | 最近录入明细 | 按统计日期倒序，最多 100 条 |
+
+录入校验（都返回 `Success = false` + 中文原因，不抛异常）：
+
+- 日期必须是 `yyyy-MM-dd`，不能是未来，最早回溯两年；
+- 播放 / 点赞 / 评论 / 转发不能为负，且互动数之和不能超过播放数（`Views = 0` 时跳过，兼容纯掉粉记录）；
+- 账号已停用时拒绝录入；
+- 数据归属：`OwnerId` 为空表示共享账号（开发态种子账号），非空只对本人可见。这是开发期的过渡规则，飞书接入后收紧。
 
 ---
 

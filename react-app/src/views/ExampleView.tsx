@@ -117,7 +117,7 @@ const planRows = [
 ];
 
 const todoRows = [
-  { title: '抖音账号授权即将失效', owner: '运营 / 发布', urgency: '高优先', tone: 'destructive' as StatusTone, href: '/connections/douyin' },
+  { title: '抖音账号授权即将失效', owner: '运营 / 发布', urgency: '高优先', tone: 'destructive' as StatusTone, href: '/connections' },
   { title: '3 条商务单等待财务复核报价', owner: '财务', urgency: '今日处理', tone: 'warning' as StatusTone, href: '/business?status=pricing-review' },
   { title: '本周内容计划缺少微博方向说明', owner: '策划', urgency: '需补全', tone: 'warning' as StatusTone, href: '/plans/weekly-tech' },
 ];
@@ -298,9 +298,14 @@ const HomeView = () => {
       ) : null}
 
       {summary ? (
-        <p className="text-xs leading-6 text-muted-foreground">
-          数据来源：{summary.DataSource.Label}（{summary.RangeStart} 至 {summary.RangeEnd}）
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs leading-6 text-muted-foreground">
+          <p>
+            数据来源：{summary.DataSource.Label}（{summary.RangeStart} 至 {summary.RangeEnd}）
+          </p>
+          <Link to="/connections" className="font-medium text-foreground underline underline-offset-4">
+            管理账号 / 录入数据
+          </Link>
+        </div>
       ) : null}
 
       <Panel>

@@ -1,13 +1,13 @@
 # HANDOFF
 
-> 交接文档 · 更新于 2026-10-19
-> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 最新提交 `3e1679c` · 工作区干净，无未推送提交
+> 交接文档 · 更新于 2026-10-19（第二次）
+> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 工作区干净，无未推送提交
 
 ---
 
 ## 1. 当前进度
 
-最近三步：产品文档发布为静态站点（`81ba382`）、认证闭环（`4100139`）、**首页指标接真实接口（`3e1679c`）**。
+最近四步：产品文档发布为静态站点（`81ba382`）、认证闭环（`4100139`）、首页指标接真实接口（`3e1679c`）、**账号与手工录入闭环（本轮）**。
 
 已到达的状态：
 
@@ -15,8 +15,9 @@
 - 登录可用：未登录访问任意受保护路由 → `/login` → 登录 → 回到来源路径；飞书免登未接入。
 - 首页四个 KPI 与平台走势来自 `DashboardManager.GetSummary`，每个数字带「数据来源」与回溯文案；接口失败时显式降级为「静态示例数据」，不伪装成真实数据。
 - 数据模型与指标口径已写进 README「看板指标与数据模型」一节。
+- `/connections` 可用：新增 / 编辑 / 停用账号，手工录入任意一天指标，最近录入明细带来源与录入人；同账号同日覆盖，停用后拒绝录入。
 
-**未开始**：飞书免登、业务角色落地（`[RequireRole]`）。爆款机会 / 限流风险 / 执行列表 / 合作单仍是前端演示数据；指标**只有读取路径，还没有写入路径**。
+**未开始**：飞书免登、业务角色落地（`[RequireRole]`）、平台 API 同步。爆款机会 / 限流风险 / 执行列表 / 合作单仍是前端演示数据。
 
 ---
 
@@ -109,6 +110,32 @@
 - CDP 驱动无头 Chrome 实测：未登录 `/business` → `/login` → 登录 → 回 `/business`；首页输出 `hasRealSource: true` / `hasFallback: false` / `hasErrorBanner: false`，读数「最强平台 96.9 万 抖音」「下滑平台 -31% 微博」「总播放 214 万 / 互动率 10.1%」「新增粉丝 3,426」「数据来源：开发态示例数据 · 5 个账号 / 35 条日记录（2026-10-12 至 2026-10-18）」。
 - `npm run lint` 仍因仓库缺 `typescript-eslint` 报 `ERR_MODULE_NOT_FOUND`（既有问题，非本轮引入），已用 `tsc` + `vitest` 替代。
 
+### 2.7 账号与手工录入（P0 第 3 步，本轮）
+
+代码：
+
+- 新增 `Services/Contracts.Dto/PlatformAccountDtos.cs`：`PlatformAccountDto`（含 `LastMetricDate`、`RecentMetricCount`）、`PlatformAccountListDto`、`SaveAccountRequestDto`、`SaveAccountResultDto`、`AccountIdRequestDto`。
+- 新增 `Services/Contracts.Dto/MetricDtos.cs`：`MetricEntryDto`、`MetricEntryListDto`、`IngestManualMetricsRequestDto`、`MetricIngestResultDto`。
+- 新增 `Services/App.Api/Utilities/PlatformCatalog.cs`：平台白名单（与前端 `platforms.ts` 同源，改一处需同步另一处）、状态白名单、`AccountVisibility` 归属规则。
+- 新增 `Services/App.Api/Managers/PlatformAccountManager.cs`：`ListAccounts` / `SaveAccount` / `DisableAccount`。停用只改状态，历史记录保留。
+- 新增 `Services/App.Api/Managers/MetricManager.cs`：`IngestManual`（同账号同日覆盖，写 `Source = manual` + 当前登录邮箱）、`ListRecentMetrics`。
+- 新增 `react-app/src/views/ConnectionsView.tsx` + 两个 api 封装；路由 `/connections` 落地，`/connections/:platform` 保持占位。
+- 首页数据来源行增加「管理账号 / 录入数据」入口。
+
+关键约定与校验：
+
+- **ServiceInvoker 的方法返回值必须是 DTO 类型**，不能返回 `List<T>`，否则 `ServiceMethodInvoker` 抛 `InvalidOperationException`。列表统一包一层 `{ Items: [...] }`。
+- 校验失败一律 `Success = false` + 中文 `Message`，不抛异常——异常会变成 500 Problem 并带堆栈，前端拿不到原因。
+- 录制规则：日期 `yyyy-MM-dd`、不可未来、最多回溯两年；播放/点赞/评论/转发非负；互动数之和不得大于播放（`Views = 0` 时跳过）；账号 `paused` 拒绝录入。
+- 归属：`OwnerId` 为空 = 共享账号（种子账号），非空仅本人可见。飞书接入后收紧。
+- `DataSource.Label` 在混合数据时改为「含开发态示例数据 · 手工录入 N 条」，避免把用户自己录的数据也说成示例。
+
+验证（`AppConfiguration__AppName=MediaAI-Smoke` 起独立实例 + 独立数据目录，不碰用户 5123 实例的数据）：
+
+- API 全链路：登录 → 建账号 → 重复账号被拒 → 录入 → 同日覆盖（`Updated = true`）→ 未来日期被拒 → 互动数超播放被拒 → 最近录入可查 → 停用后再录入被拒 → `GetSummary` 的 `ManualCount = 1`。
+- CDP 端到端：`/connections` 未登录跳 `/login` → 登录回 `/connections` → 5 张种子账号卡 → 新增「冒烟 · 验证号」→ 通过卡片「录入」写入 12,345 播放 → 最近录入表出现该行（来源「手工录入」、录入人 `demo@mediaai.local`）→ 回首页数据来源显示「含开发态示例数据 · 手工录入 1 条 · 6 个账号 / 36 条日记录」。
+- `dotnet build` 0 错误、`tsc --noEmit` 0 错误、`vitest` 8 条通过。
+
 ---
 
 ## 3. 遗留问题
@@ -119,6 +146,7 @@
 | 2 | 业务角色已定义，但没有任何接口挂 `[RequireRole(...)]` | 权限矩阵尚未生效，越权访问仍可能通过 | 待做（随接口落地） |
 | 3 | 飞书免登未接入 | `/auth/feishu/callback` 与 `FeishuManager` 不存在，登录页只支持账号密码 | 待做（P0） |
 | 4 | 首页四个 KPI 与平台走势已接接口，其余区块（爆款机会、限流风险、执行列表、合作单）仍是前端常量 | 验收第 1 条对首页指标已成立；下钻明细仍无 | 部分完成 |
+| 4b | 指标来源只有手工录入，平台 API 同步未接 | 录入靠人，量级一大就不可持续；`Source = api` 尚无写入方 | 待做（M1-4） |
 | 5 | ~~`/` 未挂 `ProtectedRoute`~~ | 已完成 | ✅ |
 | 6 | 无任何自动化测试与 CI | 改动靠人工验证 | 未规划 |
 | 7 | 推文文案只存在于对话中 | X / Facebook 两版成稿未落文件，若要发布需重新生成 | 未落地 |
@@ -136,11 +164,12 @@
 
 接下来，建议按以下顺序：
 
-1. **手工录入 / 接口同步入口**（下一步）：`MetricDaily` 已有 `Source` + `RecordedBy`，但还**没有写入路径**，种子数据是唯一数据来源。最小闭环是 `MetricManager.UpsertDaily`（人工录入某账号某天）与 `PlatformAccountManager` 的增删改查，界面上放在「平台连接」页。
-2. **首页剩余区块接接口**：爆款机会、限流风险、执行列表、合作单摘要，补齐 `GetSummary` 或拆成独立方法；每块都要给出可下钻的明细。
-3. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
-4. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
-5. **`/analysis/:viewId` 去留**（一行决定，可随时处理）
+1. ~~**手工录入 / 接口同步入口**：`MetricManager.UpsertDaily` + `PlatformAccountManager` 增删改查 + 「平台连接」页~~ — 已完成手工模式（见 2.7），接口同步仍未做
+2. **首页剩余区块接接口**（下一步）：爆款机会、限流风险、执行列表、合作单摘要，补齐 `GetSummary` 或拆成独立方法；每块都要给出可下钻的明细。爆款机会可以从已有的 `MetricDaily` 直接算（区间内单条播放 / 粉丝增量 Top N），风险区块需要新增阈值配置，别再用前端常量。
+3. **批量导入**：手工单条录入只能应急。给运营一个 CSV 导入（账号、日期、播放、互动），复用 `MetricManager` 的校验与 `Source = manual`，比逐个平台谈 API 快得多。
+4. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
+5. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
+6. **`/analysis/:viewId` 去留**（一行决定，可随时处理）
 
 产品文档给出的分期是 M0–M4、共 36 人日（M0 7.5 / M1 9 / M2 11.5 / M3 8），为估算值，大概率会超。
 
@@ -155,6 +184,9 @@
 - `.gitignore` 已排除 `.env`、`appsettings.*.json`、`local-signing.key`。
 - **`App.Api.Managers` 命名空间下只放 Manager**：反射会扫描该命名空间的 `IManagerService`，任何辅助类（如聚合用的 `PlatformAggregate`）必须放到 `Utilities`，静态工具类同样会被当文档类型扫描。
 - 调 `/Api/invoke` 时 **`AccessToken` 与 `RefreshToken` 必须同时带**，只给 `AccessToken` 会失败（与 `AuthManager.Login` 返回一致）。
+- **`AuthManager.Login` / `SignUp` 返回的 token 在 `Result` 里面**，不在信封顶层。脚本取 token 时按 `Result.AccessToken` / `Result.RefreshToken` 读。
+- **ServiceInvoker 的方法返回值必须是 DTO 类型**：返回 `List<T>` 会被 `ServiceMethodInvoker` 判为非法返回值并抛异常。列表统一包 `{ Items: [...] }`。
+- Manager 里做参数校验时不要抛异常——异常会变成 500 Problem 带堆栈，前端拿不到中文原因；改用 `Success = false` 的 Result DTO。
 
 ### 5.2 本地环境
 
@@ -163,6 +195,8 @@
 - 推送凭据由 IDE 临时注入，**不可用于 GitHub Settings API**；机器上无 gh CLI token、无钥匙串凭据、无 `GITHUB_TOKEN`、无 `~/.netrc`。需要改仓库设置时只能人工操作。
 - 改完后端不想打扰正在跑的 `https://localhost:5123`：用 `dotnet run --no-build --urls https://localhost:5124` 起一个独立实例验证，验完 kill 掉。前端 `react-app/.env` 的 `VITE_API_URL` 指向验证实例时，**验完必须改回 5123**。
 - 重置开发态种子数据：删掉本地数据目录下 `PlatformAccount.json` 与 `MetricDaily.json`（路径含 `AppConfiguration__AppName`，默认 `~/CodeBuddy/Resources/MediaAI/` 附近），重启后端即重新生成 5 个账号 × 7 天。
+- **做写操作验证时隔离数据目录**：`AppConfiguration__AppName=MediaAI-Smoke dotnet run --no-build --urls https://localhost:5126`，数据落在 `~/CodeBuddy/Resources/MediaAI-Smoke/`，不会污染用户 5123 实例的数据。新目录里没有用户，要先调 `AuthManager.SignUp` 再登录。
+- 前端验证实例用环境变量覆盖接口地址，别改 `.env`：`VITE_API_URL=https://localhost:5126 npx vite --port 3100`。
 
 ### 5.3 口径约定（后续改动请沿用）
 

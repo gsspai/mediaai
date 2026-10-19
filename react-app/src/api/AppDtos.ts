@@ -162,3 +162,92 @@ export interface DashboardSummaryDto {
   PlatformTrends: DashboardPlatformTrendDto[];
   DataSource: DashboardDataSourceDto;
 }
+
+// ---------- 平台账号 · PlatformAccountManager ----------
+
+export interface PlatformAccountDto {
+  Id: string;
+  Platform: string;
+  Handle: string;
+  DisplayName: string;
+  Status: string;
+  FollowerCount: number;
+  OwnerId: string;
+  /** 最近一条日记录日期（yyyy-MM-dd），没有记录时为 null */
+  LastMetricDate: string | null;
+  RecentMetricCount: number;
+  CreatedAt: string;
+  UpdatedAt: string;
+}
+
+export interface PlatformAccountListDto {
+  Items: PlatformAccountDto[];
+}
+
+export interface ListAccountsRequestDto {
+  IncludePaused: boolean;
+}
+
+export interface SaveAccountRequestDto {
+  Id: string | null;
+  Platform: string;
+  Handle: string;
+  DisplayName: string;
+  Status: string;
+  FollowerCount: number;
+}
+
+export interface SaveAccountResultDto {
+  Success: boolean;
+  Message: string;
+  Account: PlatformAccountDto | null;
+}
+
+export interface AccountIdRequestDto {
+  AccountId: string;
+}
+
+// ---------- 日指标 · MetricManager ----------
+
+export interface MetricEntryDto {
+  Id: string;
+  AccountId: string;
+  Platform: string;
+  AccountName: string;
+  StatDate: string;
+  Views: number;
+  Likes: number;
+  Comments: number;
+  Shares: number;
+  NewFollowers: number;
+  Source: string;
+  RecordedBy: string;
+  RecordedAt: string;
+}
+
+export interface MetricEntryListDto {
+  Items: MetricEntryDto[];
+}
+
+export interface IngestManualMetricsRequestDto {
+  AccountId: string;
+  /** yyyy-MM-dd */
+  StatDate: string;
+  Views: number;
+  Likes: number;
+  Comments: number;
+  Shares: number;
+  NewFollowers: number;
+}
+
+export interface MetricIngestResultDto {
+  Success: boolean;
+  Message: string;
+  Updated: boolean;
+  Entry: MetricEntryDto | null;
+}
+
+export interface ListRecentMetricsRequestDto {
+  AccountId: string | null;
+  Take: number;
+}

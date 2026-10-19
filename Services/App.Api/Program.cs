@@ -198,6 +198,8 @@ namespace App.Api
             // All orchestrating manager and engine registration
             services.AddScoped<AuthManager>();
             services.AddScoped<DashboardManager>();
+            services.AddScoped<PlatformAccountManager>();
+            services.AddScoped<MetricManager>();
             services.AddScoped<DashboardSeeder>();
             services.AddScoped<AuthenticatorEngine>();
             services.AddScoped<UserContextService>();
