@@ -161,6 +161,20 @@ export interface DashboardSummaryDto {
   Kpis: DashboardKpiDto[];
   PlatformTrends: DashboardPlatformTrendDto[];
   DataSource: DashboardDataSourceDto;
+  Opportunities: DashboardSignalDto[];
+  Risks: DashboardSignalDto[];
+  SignalPolicy: string;
+}
+
+/** 机会 / 风险区块的一行，Title 是账号展示名，Trace 说明触发依据。 */
+export interface DashboardSignalDto {
+  Key: string;
+  Title: string;
+  Platform: string;
+  Signal: string;
+  Detail: string;
+  Tone: string;
+  Trace: string;
 }
 
 // ---------- 平台账号 · PlatformAccountManager ----------

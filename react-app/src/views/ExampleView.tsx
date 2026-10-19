@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import DashboardManager from '@/api/DashboardManager';
-import type { DashboardSummaryDto } from '@/api/AppDtos';
+import type { DashboardSignalDto, DashboardSummaryDto } from '@/api/AppDtos';
 import useAuthStore from '@/auth/AuthStore';
 import { formatCompactNumber } from '@/lib/format';
 import { getPlatformLabel } from '@/utils/platforms';
@@ -94,15 +94,40 @@ const fallbackPlatformSeries: { platform: string; tone: StatusTone; points: Tren
   },
 ];
 
-const breakoutContent = [
-  { title: '供应链幕后', platform: '抖音', signal: '2.8x', stat: '18.6万 播放', href: '/plans/daily-hotspot' },
-  { title: '品牌增长拆解', platform: '公众号', signal: '14.2% 打开率', stat: '6.3万 阅读', href: '/plans/brand-case' },
+/** 机会 / 风险区块的一行。由 DashboardSignalDto 映射而来，trace 必须保留。 */
+type SignalView = {
+  id: string;
+  title: string;
+  platform: string;
+  signal: string;
+  detail: string;
+  tone: StatusTone;
+  trace: string;
+  href: string;
+};
+
+/** 接口不可用时的兜底：明确标为「静态示例数据」，不与真实计算结果混排。 */
+const fallbackOpportunities: SignalView[] = [
+  { id: 'fallback-breakout-1', title: '抖音 · 主号', platform: 'douyin', signal: '2.8x 日均', detail: '单日 18.6 万 · 区间日均 6.6 万', tone: 'success', trace: '静态示例数据 · 接口未连接', href: '/connections' },
+  { id: 'fallback-breakout-2', title: '公众号 · 主号', platform: 'wechat-official', signal: '1.9x 日均', detail: '单日 6.3 万 · 区间日均 3.3 万', tone: 'success', trace: '静态示例数据 · 接口未连接', href: '/connections' },
 ];
 
-const throttledContent = [
-  { title: '周末热点追踪', platform: '微博', signal: '-42%', reason: '话题匹配弱', href: '/plans/weekly-tech' },
-  { title: '新品测评卡点', platform: '抖音', signal: '完播率偏低', reason: '前 3 秒留存不足', href: '/plans/daily-hotspot' },
+const fallbackRisks: SignalView[] = [
+  { id: 'fallback-risk-1', title: '微博 · 主号', platform: 'weibo', signal: '-42%', detail: '日均 5.2 万 → 3.0 万', tone: 'destructive', trace: '静态示例数据 · 接口未连接', href: '/connections' },
+  { id: 'fallback-risk-2', title: '抖音 · 主号', platform: 'douyin', signal: '近 4 天无数据', detail: '最后一次录入 10-14 · 需要补录', tone: 'warning', trace: '静态示例数据 · 接口未连接', href: '/connections' },
 ];
+
+const toSignalViews = (items: DashboardSignalDto[]): SignalView[] =>
+  items.map((item) => ({
+    id: item.Key,
+    title: item.Title,
+    platform: item.Platform,
+    signal: item.Signal,
+    detail: item.Detail,
+    tone: (item.Tone as StatusTone) ?? 'info',
+    trace: item.Trace,
+    href: '/connections',
+  }));
 
 const businessRows = [
   { name: '青岚科技春季合作', owner: '商务 / 林乔', status: '待报价审核', statusTone: 'warning' as StatusTone, nextStep: '财务确认报价区间', href: '/business/deal-qinglan' },
@@ -209,6 +234,9 @@ const HomeView = () => {
         changeRate: changeRate(item.points),
         points: item.points,
       }));
+
+  const opportunityViews = summary ? toSignalViews(summary.Opportunities ?? []) : fallbackOpportunities;
+  const riskViews = summary ? toSignalViews(summary.Risks ?? []) : fallbackRisks;
 
   return (
     <PageShell>
@@ -348,12 +376,20 @@ const HomeView = () => {
             eyebrow="机会"
             title="爆款机会"
             icon={Flame}
-            actions={<StatusPill tone="success">可放大</StatusPill>}
+            actions={
+              <StatusPill tone={summary ? (opportunityViews.length > 0 ? 'success' : 'default') : 'info'}>
+                {summary ? `${opportunityViews.length} 个触发` : '静态示例数据'}
+              </StatusPill>
+            }
           />
           <PanelBody className="space-y-3">
-            {breakoutContent.map((item) => (
-              <SignalRow key={item.title} {...item} />
-            ))}
+            {opportunityViews.length > 0 ? (
+              opportunityViews.map((item) => <SignalRow key={item.id} {...item} />)
+            ) : (
+              <p className="px-1 py-2 text-sm leading-6 text-muted-foreground">
+                区间内没有账号的单日播放达到自身日均的 2 倍。只有到达阈值的账号才会出现在这里，不做「疑似机会」的推测。
+              </p>
+            )}
           </PanelBody>
         </Panel>
 
@@ -362,15 +398,27 @@ const HomeView = () => {
             eyebrow="风险"
             title="限流 / 掉速风险"
             icon={Siren}
-            actions={<StatusPill tone="destructive">需排查</StatusPill>}
+            actions={
+              <StatusPill tone={summary ? (riskViews.length > 0 ? 'destructive' : 'success') : 'info'}>
+                {summary ? (riskViews.length > 0 ? `${riskViews.length} 个需排查` : '暂未触发') : '静态示例数据'}
+              </StatusPill>
+            }
           />
           <PanelBody className="space-y-3">
-            {throttledContent.map((item) => (
-              <SignalRow key={item.title} {...item} />
-            ))}
+            {riskViews.length > 0 ? (
+              riskViews.map((item) => <SignalRow key={item.id} {...item} />)
+            ) : (
+              <p className="px-1 py-2 text-sm leading-6 text-muted-foreground">
+                没有账号触发掉速、互动偏低或缺数据规则。
+              </p>
+            )}
           </PanelBody>
         </Panel>
       </div>
+
+      {summary?.SignalPolicy ? (
+        <p className="text-[11px] leading-5 text-muted-foreground">判定规则：{summary.SignalPolicy}</p>
+      ) : null}
 
       {isManagement ? (
         <Panel>
@@ -529,21 +577,7 @@ const HomeView = () => {
   );
 };
 
-const SignalRow = ({
-  title,
-  platform,
-  signal,
-  stat,
-  reason,
-  href,
-}: {
-  title: string;
-  platform: string;
-  signal: string;
-  stat?: string;
-  reason?: string;
-  href: string;
-}) => (
+const SignalRow = ({ title, platform, signal, detail, tone, trace, href }: SignalView) => (
   <Link
     to={href}
     className="block rounded-2xl border border-border/60 bg-background/60 px-5 py-4 transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
@@ -552,12 +586,11 @@ const SignalRow = ({
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-medium tracking-tight">{title}</p>
-          <StatusPill>{platform}</StatusPill>
+          <StatusPill>{getPlatformLabel(platform)}</StatusPill>
+          <StatusPill tone={tone}>{signal}</StatusPill>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-          <span>{signal}</span>
-          <span>{stat ?? reason}</span>
-        </div>
+        <p className="text-sm text-muted-foreground">{detail}</p>
+        <p className="text-[10px] leading-4 text-muted-foreground/80">{trace}</p>
       </div>
       <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
     </div>

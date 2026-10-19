@@ -30,6 +30,59 @@ public class DashboardSummaryDto
     public List<DashboardPlatformTrendDto> PlatformTrends { get; set; } = new();
 
     public DashboardDataSourceDto DataSource { get; set; } = new();
+
+    /// <summary>
+    /// 爆款机会：区间内单日播放明显超过该账号自身日均的记录。按倍数倒序，最多 3 条。
+    /// </summary>
+    public List<DashboardSignalDto> Opportunities { get; set; } = new();
+
+    /// <summary>
+    /// 限流 / 掉速风险：掉速、互动偏低、近几天没数据。按严重度排序，最多 3 条。
+    /// </summary>
+    public List<DashboardSignalDto> Risks { get; set; } = new();
+
+    /// <summary>
+    /// 触发规则的一句话说明，前端直接展示，避免「这些结论是怎么来的」说不清。
+    /// </summary>
+    public string SignalPolicy { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// 首页机会 / 风险区块的一行。Title 是账号展示名，Signal 是触发值，Trace 说明依据。
+/// </summary>
+public class DashboardSignalDto
+{
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 账号展示名，例如「抖音 · 主号」。
+    /// </summary>
+    public string Title { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 平台标识，前端映射为中文名。
+    /// </summary>
+    public string Platform { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 触发值，例如「2.8x 日均」「-42%」「近 4 天无数据」。
+    /// </summary>
+    public string Signal { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 具体数字，例如「单日 18.6 万 · 区间合计 42.1 万」。
+    /// </summary>
+    public string Detail { get; set; } = string.Empty;
+
+    /// <summary>
+    /// success / warning / destructive，与前端 StatusPill 色板对应。
+    /// </summary>
+    public string Tone { get; set; } = "info";
+
+    /// <summary>
+    /// 回溯说明：哪天、几条记录、来源是什么。
+    /// </summary>
+    public string Trace { get; set; } = string.Empty;
 }
 
 /// <summary>

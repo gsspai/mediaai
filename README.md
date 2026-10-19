@@ -45,19 +45,19 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 工作台首页（`/`） | 已完成（指标卡接接口） | 四个 KPI 与平台走势来自 `DashboardManager.GetSummary`；爆款机会、限流风险、执行列表仍是前端数据 |
+| 工作台首页（`/`） | 已完成（指标卡 + 机会/风险接接口） | 四个 KPI、平台走势、爆款机会、限流风险均由 `DashboardManager.GetSummary` 现场计算；执行列表（商务 / 计划 / 待办）仍是前端数据 |
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
 | 平台连接页（`/connections`） | 已完成（手工模式） | 账号增删改查、停用、手工录入日指标、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
 | 详情页 | 占位 | `/business`、`/plans/:planId`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
-| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号与手工录入；商务 / 计划 / 分析尚无 Manager |
+| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、机会 / 风险信号、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号与手工录入；商务 / 计划 / 分析尚无 Manager |
 | 数据模型 | 已建立 | `PlatformAccount`（平台账号）、`MetricDaily`（日指标快照，含 `Source` 与 `RecordedBy`） |
 | 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
 
-> 首页 KPI 卡与平台走势已改由接口返回，文案里的「数据来源」行会标明是接口同步、手工录入还是开发态种子数据，种子数据的每张卡也写明来源。爆款机会、限流风险、执行列表、合作单仍是 `react-app/src/views/ExampleView.tsx` 中的演示数据，后续按模块逐个替换。
+> 首页 KPI 卡、平台走势、爆款机会与限流风险均由接口返回，每张卡与每条信号都带来源说明（接口同步 / 手工录入 / 开发态种子）。「执行列表」三个 Tab（商务、计划、待办）与「管理层概览」仍是 `react-app/src/views/ExampleView.tsx` 中的演示数据，接口不可用时 KPI 与信号区块会显式降级为「静态示例数据」。
 
 ---
 
@@ -235,6 +235,22 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 - 播放 / 点赞 / 评论 / 转发不能为负，且互动数之和不能超过播放数（`Views = 0` 时跳过，兼容纯掉粉记录）；
 - 账号已停用时拒绝录入；
 - 数据归属：`OwnerId` 为空表示共享账号（开发态种子账号），非空只对本人可见。这是开发期的过渡规则，飞书接入后收紧。
+
+### 机会与风险判定规则
+
+`DashboardManager.GetSummary` 同时返回 `Opportunities` 与 `Risks`，两者都从区间内的 `MetricDaily` 现场算，结论文案里的 `SignalPolicy` 由后端生成，前端直接展示，避免「这些结论哪来的」说不清。
+
+| 类别 | 规则 | 阈值常量 |
+| --- | --- | --- |
+| 爆款机会 | 单日播放 ≥ 该账号区间日均的 2 倍，且 ≥ 1,000 | `BreakoutMultiplier` / `BreakoutMinViews` |
+| 掉速风险 | 后段日均播放较前段下降 ≥ 30%（前段无数据则跳过） | `DeclineThreshold` |
+| 互动偏低 | 区间互动率 < 1%（播放 ≥ 1,000 才判） | `LowInteractionRate` |
+| 缺数据 | 未停用账号近 3 天没有日记录（区间内新建的账号不判） | `StaleDays` |
+
+- 每个账号在同一时刻只报一条风险，按「掉速 > 互动偏低 > 缺数据」取最严重的一条，避免一个账号占满面板。
+- 两个区块各最多 3 条，机会按倍数倒序、风险按严重度与幅度排序。
+- 阈值是代码常量而非库内配置：先让口径跑通，可配阈值留给后续版本；改常量必须同步 `BuildSignalPolicy` 的文案。
+- 没有命中时返回空列表，前端显示「区间内没有账号达到阈值」，不生成「疑似机会」这类推测行。
 
 ---
 

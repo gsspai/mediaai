@@ -19,6 +19,14 @@ namespace App.Api.Managers
         private const string KpiReady = "ready";
         private const string KpiPending = "pending";
 
+        // 机会 / 风险阈值。改这里就是改口径，SignalPolicy 的文案必须同步改，否则界面会骗人。
+        private const double BreakoutMultiplier = 2.0;
+        private const long BreakoutMinViews = 1000;
+        private const double DeclineThreshold = -30;
+        private const double LowInteractionRate = 1.0;
+        private const int StaleDays = 3;
+        private const int MaxSignals = 3;
+
         private readonly IDatabaseAccessor _databaseAccessor;
 
         public DashboardManager(IDatabaseAccessor databaseAccessor)
@@ -48,7 +56,8 @@ namespace App.Api.Managers
                 RangeEnd = end.ToString("yyyy-MM-dd"),
                 AccountCount = accounts.Count,
                 HasData = metrics.Count > 0,
-                DataSource = BuildDataSource(metrics, accounts)
+                DataSource = BuildDataSource(metrics, accounts),
+                SignalPolicy = BuildSignalPolicy(days)
             };
 
             if (!summary.HasData)
@@ -112,6 +121,10 @@ namespace App.Api.Managers
                     };
                 })
                 .ToList();
+
+            var signals = BuildSignals(metrics, accounts, days, start, end);
+            summary.Opportunities = signals.Opportunities;
+            summary.Risks = signals.Risks;
 
             return summary;
         }
@@ -222,6 +235,171 @@ namespace App.Api.Managers
                 SeedCount = seed,
                 Label = label
             };
+        }
+
+        private static string BuildSignalPolicy(int days)
+        {
+            var firstHalf = days / 2;
+            var secondHalf = days - firstHalf;
+            return $"机会：单日播放 ≥ {BreakoutMultiplier:0.#} 倍账号日均且 ≥ {BreakoutMinViews:N0}；"
+                + $"风险：前 {firstHalf} 天与后 {secondHalf} 天日均下降 ≥ {Math.Abs(DeclineThreshold):0}%、互动率 < {LowInteractionRate:0.#}%，"
+                + $"或近 {StaleDays} 天没有日记录。全部按日记录实时计算，不预估。";
+        }
+
+        /// <summary>
+        /// 机会与风险都从 MetricDaily 现场算，每条都带触发值（Signal）与依据（Trace）。
+        /// 阈值是硬编码常量而不是查库配置：先把口径跑通，阈值可配留给后续版本。
+        /// </summary>
+        private static (List<DashboardSignalDto> Opportunities, List<DashboardSignalDto> Risks) BuildSignals(
+            IReadOnlyList<MetricDaily> metrics,
+            IReadOnlyList<PlatformAccount> accounts,
+            int days,
+            DateOnly start,
+            DateOnly end)
+        {
+            var nameById = accounts.ToDictionary(account => account.Id, account => account.DisplayName);
+            var opportunities = new List<(DashboardSignalDto Signal, double Score)>();
+            var risks = new List<(DashboardSignalDto Signal, int Severity, long Magnitude)>();
+
+            var firstHalfDays = days / 2;
+            var secondHalfDays = days - firstHalfDays;
+            var mid = start.AddDays(firstHalfDays);
+
+            foreach (var group in metrics.GroupBy(metric => metric.AccountId))
+            {
+                var records = group.ToList();
+                var totalViews = records.Sum(record => record.Views);
+                var interactions = records.Sum(record => record.Likes + record.Comments + record.Shares);
+                var dayCount = records.Select(record => record.StatDate).Distinct().Count();
+                var averageViews = dayCount > 0 ? (double)totalViews / dayCount : 0;
+                var peak = records.OrderByDescending(record => record.Views).ThenByDescending(record => record.StatDate).First();
+                var title = ResolveAccountName(peak, nameById);
+                var source = ResolveSourceLabel(records);
+
+                if (averageViews >= 1 && peak.Views >= BreakoutMinViews && peak.Views >= averageViews * BreakoutMultiplier)
+                {
+                    var ratio = peak.Views / averageViews;
+                    opportunities.Add((
+                        new DashboardSignalDto
+                        {
+                            Key = $"breakout-{peak.AccountId}-{peak.StatDate:yyyyMMdd}",
+                            Title = title,
+                            Platform = peak.Platform,
+                            Signal = $"{ratio:0.#}x 日均",
+                            Detail = $"单日 {FormatCompact(peak.Views)} 播放 · 区间日均 {FormatCompact((long)averageViews)}",
+                            Tone = "success",
+                            Trace = $"{peak.StatDate:MM-dd} · {records.Count} 条日记录 · {source}"
+                        },
+                        ratio));
+                }
+
+                var firstHalfViews = records.Where(record => record.StatDate < mid).Sum(record => record.Views);
+                var secondHalfViews = records.Where(record => record.StatDate >= mid).Sum(record => record.Views);
+
+                // 掉速优先于互动偏低：同一个账号两条都命中时，只报更严重的那条，避免一个账号占满整个面板。
+                var rate = DailyChangeRate(firstHalfViews, secondHalfViews, firstHalfDays, secondHalfDays);
+                if (rate.HasValue && rate.Value <= DeclineThreshold && secondHalfViews > 0)
+                {
+                    var firstAverage = (double)firstHalfViews / firstHalfDays;
+                    var secondAverage = (double)secondHalfViews / secondHalfDays;
+                    risks.Add((
+                        new DashboardSignalDto
+                        {
+                            Key = $"decline-{peak.AccountId}",
+                            Title = title,
+                            Platform = peak.Platform,
+                            Signal = $"{rate.Value:0}%",
+                            Detail = $"日均 {FormatCompact((long)firstAverage)} → {FormatCompact((long)secondAverage)}",
+                            Tone = "destructive",
+                            Trace = $"前 {firstHalfDays} 天与后 {secondHalfDays} 天日均对比 · {records.Count} 条日记录"
+                        },
+                        0,
+                        (long)Math.Abs(rate.Value)));
+                }
+                else if (totalViews >= BreakoutMinViews && interactions * 100d / totalViews < LowInteractionRate)
+                {
+                    var interactionRate = interactions * 100d / totalViews;
+                    risks.Add((
+                        new DashboardSignalDto
+                        {
+                            Key = $"low-interaction-{peak.AccountId}",
+                            Title = title,
+                            Platform = peak.Platform,
+                            Signal = $"互动率 {interactionRate:0.##}%",
+                            Detail = $"区间播放 {FormatCompact(totalViews)} · 互动 {FormatCompact(interactions)}",
+                            Tone = "warning",
+                            Trace = $"低于 {LowInteractionRate:0.#}% 阈值 · {records.Count} 条日记录 · {source}"
+                        },
+                        1,
+                        (long)(LowInteractionRate - interactionRate)));
+                }
+            }
+
+            // 停止更新的账号：已停用的不提醒，区间内新建的账号也不提醒，避免刚建号就报「缺数据」。
+            var staleStart = end.AddDays(-(StaleDays - 1));
+            foreach (var account in accounts.Where(account => account.Status != PlatformAccountStatus.Paused))
+            {
+                if (DateOnly.FromDateTime(account.CreatedAt.UtcDateTime) > start)
+                {
+                    continue;
+                }
+
+                var latest = metrics
+                    .Where(metric => metric.AccountId == account.Id)
+                    .Select(metric => (DateOnly?)metric.StatDate)
+                    .Max();
+
+                if (latest.HasValue && latest.Value >= staleStart)
+                {
+                    continue;
+                }
+
+                var gapDays = latest.HasValue ? end.DayNumber - latest.Value.DayNumber : days;
+
+                risks.Add((
+                    new DashboardSignalDto
+                    {
+                        Key = $"stale-{account.Id}",
+                        Title = account.DisplayName,
+                        Platform = account.Platform,
+                        Signal = $"近 {gapDays} 天无数据",
+                        Detail = latest.HasValue
+                            ? $"最后一次录入 {latest.Value:MM-dd} · 需要补录"
+                            : $"区间 {start:MM-dd} 至 {end:MM-dd} 内没有任何日记录",
+                        Tone = "warning",
+                        Trace = $"账号 {account.Handle} · 状态 {account.Status}"
+                    },
+                    2,
+                    gapDays));
+            }
+
+            return (
+                opportunities
+                    .OrderByDescending(item => item.Score)
+                    .Take(MaxSignals)
+                    .Select(item => item.Signal)
+                    .ToList(),
+                risks
+                    .OrderBy(item => item.Severity)
+                    .ThenByDescending(item => item.Magnitude)
+                    .Take(MaxSignals)
+                    .Select(item => item.Signal)
+                    .ToList());
+        }
+
+        private static string ResolveAccountName(MetricDaily metric, IReadOnlyDictionary<Guid, string> nameById) =>
+            nameById.TryGetValue(metric.AccountId, out var name) && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : $"{metric.Platform} 账号";
+
+        /// <summary>
+        /// 一个账号的多条记录可能来源混杂（手工补录 + 接口同步），取最强的那一种，避免文案含糊。
+        /// </summary>
+        private static string ResolveSourceLabel(IReadOnlyList<MetricDaily> records)
+        {
+            if (records.Any(record => record.Source == MetricSource.Manual)) return "手工录入";
+            if (records.Any(record => record.Source == MetricSource.Api)) return "接口同步";
+            return "开发态示例";
         }
 
         /// <summary>
