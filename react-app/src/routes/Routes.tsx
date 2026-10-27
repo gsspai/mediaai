@@ -4,6 +4,7 @@ import ExampleView from '@/views/ExampleView';
 import LoginView from '@/views/LoginView';
 import NotFoundView from '@/views/NotFoundView';
 import ProtectedRoute from '@/routes/ProtectedRoute';
+import SettingsView from '@/views/SettingsView';
 import UnauthorizedView from '@/views/UnauthorizedView';
 import WorkspaceDetailPlaceholderView from '@/views/WorkspaceDetailPlaceholderView';
 
@@ -25,6 +26,7 @@ const AppRoutes = () => {
           <Route path="/plans/:planId" element={<WorkspaceDetailPlaceholderView />} />
           <Route path="/connections" element={<ConnectionsView />} />
           <Route path="/connections/:platform" element={<WorkspaceDetailPlaceholderView />} />
+          <Route path="/settings" element={<SettingsView />} />
           <Route path="/analysis/:viewId" element={<WorkspaceDetailPlaceholderView />} />
         </Route>
 

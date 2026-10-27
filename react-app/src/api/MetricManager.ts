@@ -1,4 +1,6 @@
 import {
+  ImportMetricsCsvRequestDto,
+  ImportMetricsCsvResultDto,
   IngestManualMetricsRequestDto,
   ListRecentMetricsRequestDto,
   MetricEntryListDto,
@@ -12,4 +14,7 @@ const IngestManual = (request: IngestManualMetricsRequestDto): Promise<MetricIng
 const ListRecentMetrics = (request: ListRecentMetricsRequestDto): Promise<MetricEntryListDto> =>
   ApiClient.invokeMethod<MetricEntryListDto>('Api', 'MetricManager', 'ListRecentMetrics', request);
 
-export default { IngestManual, ListRecentMetrics };
+const ImportCsv = (request: ImportMetricsCsvRequestDto): Promise<ImportMetricsCsvResultDto> =>
+  ApiClient.invokeMethod<ImportMetricsCsvResultDto>('Api', 'MetricManager', 'ImportCsv', request);
+
+export default { IngestManual, ListRecentMetrics, ImportCsv };

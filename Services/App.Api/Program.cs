@@ -200,6 +200,7 @@ namespace App.Api
             services.AddScoped<DashboardManager>();
             services.AddScoped<PlatformAccountManager>();
             services.AddScoped<MetricManager>();
+            services.AddScoped<SettingsManager>();
             services.AddScoped<DashboardSeeder>();
             services.AddScoped<AuthenticatorEngine>();
             services.AddScoped<UserContextService>();

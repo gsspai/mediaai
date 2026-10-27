@@ -330,9 +330,14 @@ const HomeView = () => {
           <p>
             数据来源：{summary.DataSource.Label}（{summary.RangeStart} 至 {summary.RangeEnd}）
           </p>
-          <Link to="/connections" className="font-medium text-foreground underline underline-offset-4">
-            管理账号 / 录入数据
-          </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link to="/connections" className="font-medium text-foreground underline underline-offset-4">
+              管理账号 / 录入数据
+            </Link>
+            <Link to="/settings" className="font-medium text-foreground underline underline-offset-4">
+              调整判定阈值
+            </Link>
+          </div>
         </div>
       ) : null}
 
@@ -417,7 +422,10 @@ const HomeView = () => {
       </div>
 
       {summary?.SignalPolicy ? (
-        <p className="text-[11px] leading-5 text-muted-foreground">判定规则：{summary.SignalPolicy}</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-[11px] leading-5 text-muted-foreground">
+          <p>判定规则：{summary.SignalPolicy}</p>
+          {summary.SignalPolicyTrace ? <p>{summary.SignalPolicyTrace}</p> : null}
+        </div>
       ) : null}
 
       {isManagement ? (

@@ -43,8 +43,14 @@ public class DashboardSummaryDto
 
     /// <summary>
     /// 触发规则的一句话说明，前端直接展示，避免「这些结论是怎么来的」说不清。
+    /// 文案由当前生效的阈值生成，阈值改动后这里会跟着变。
     /// </summary>
     public string SignalPolicy { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 阈值来源：默认阈值，或者「阈值更新于 2026-10-20 16:40 · someone@example.com」。
+    /// </summary>
+    public string SignalPolicyTrace { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -182,6 +188,11 @@ public class DashboardTrendPointDto
 public class DashboardDataSourceDto
 {
     public int ManualCount { get; set; }
+
+    /// <summary>
+    /// CSV 批量导入的条数。与 ManualCount 分开，便于判断数据是人一条条录的还是整批灌进来的。
+    /// </summary>
+    public int CsvCount { get; set; }
 
     public int ApiCount { get; set; }
 

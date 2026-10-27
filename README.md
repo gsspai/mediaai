@@ -49,15 +49,15 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
-| 平台连接页（`/connections`） | 已完成（手工模式） | 账号增删改查、停用、手工录入日指标、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
-| 详情页 | 占位 | `/business`、`/plans/:planId`、`/analysis/:viewId` 指向占位视图；`/settings` 尚未建立 |
+| 平台连接页（`/connections`） | 已完成（手工 + CSV） | 账号增删改查、停用、手工录入日指标、CSV 批量导入、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
+| 详情页 | 部分 | `/business`、`/plans/:planId`、`/analysis/:viewId` 指向占位视图；`/settings` 已实现阈值配置 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
-| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、机会 / 风险信号、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号与手工录入；商务 / 计划 / 分析尚无 Manager |
+| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、机会 / 风险信号、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号、手工录入与 CSV 导入；商务 / 计划 / 分析尚无 Manager |
 | 数据模型 | 已建立 | `PlatformAccount`（平台账号）、`MetricDaily`（日指标快照，含 `Source` 与 `RecordedBy`） |
 | 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
 
-> 首页 KPI 卡、平台走势、爆款机会与限流风险均由接口返回，每张卡与每条信号都带来源说明（接口同步 / 手工录入 / 开发态种子）。「执行列表」三个 Tab（商务、计划、待办）与「管理层概览」仍是 `react-app/src/views/ExampleView.tsx` 中的演示数据，接口不可用时 KPI 与信号区块会显式降级为「静态示例数据」。
+> 首页 KPI 卡、平台走势、爆款机会与限流风险均由接口返回，每张卡与每条信号都带来源说明（接口同步 / 手工录入 / CSV 导入 / 开发态种子）。「执行列表」三个 Tab（商务、计划、待办）与「管理层概览」仍是 `react-app/src/views/ExampleView.tsx` 中的演示数据，接口不可用时 KPI 与信号区块会显式降级为「静态示例数据」。
 
 ---
 
@@ -213,7 +213,7 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 | `PlatformAccount` | 平台账号 | `Platform`、`Handle`、`Status`（`connected` / `manual` / `paused` / `error`）、`FollowerCount`、`OwnerId` |
 | `MetricDaily` | 每个账号每天的指标快照 | `AccountId`、`Platform`、`StatDate`、`Views` / `Likes` / `Comments` / `Shares`、`NewFollowers`、`Source`、`RecordedBy`、`RecordedAt` |
 
-- `MetricDaily.Source` 取 `api`（平台接口同步）/ `manual`（人工录入）/ `seed`（开发态种子），返回体里的 `DataSource` 会把三者计数摊开，界面直接显示「开发态示例数据 · 5 个账号 / 35 条日记录」这类文案。**新增数据入口时必须写入 `Source` 与 `RecordedBy`，否则数字无法回溯。**
+- `MetricDaily.Source` 取 `api`（平台接口同步）/ `manual`（人工录入）/ `csv`（CSV 批量导入）/ `seed`（开发态种子），返回体里的 `DataSource` 会把四者计数摊开，界面直接显示「开发态示例数据 · 5 个账号 / 35 条日记录」「CSV 导入 12 条」这类文案。**新增数据入口时必须写入 `Source` 与 `RecordedBy`，否则数字无法回溯。**
 - 环比口径：把一个区间对半切成前段与后段，用**日均播放**比较（`DailyChangeRate`），而不是两段总量——7 天区间前 3 天后 4 天，用总量比会系统性低估后段。
 - 无数据时不报错：`HasData = false`，四个 KPI 返回 `"—"` 与 `Status = pending`，界面同时展示「静态示例数据」标记，避免把占位值当成真实数据。
 
@@ -227,6 +227,7 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 | `PlatformAccountManager.SaveAccount` | 新增 / 编辑 | 同一平台下 `Handle` 唯一；已有日记录的账号不允许改平台 |
 | `PlatformAccountManager.DisableAccount` | 停用 | 只改状态不删数据，历史记录仍参与回溯 |
 | `MetricManager.IngestManual` | 手工录入单日指标 | 同账号同日按覆盖；写 `Source = manual` 与当前登录邮箱 |
+| `MetricManager.ImportCsv` | CSV 批量导入 | 逐行校验，同账号同日按覆盖；写 `Source = csv` 与当前登录邮箱 |
 | `MetricManager.ListRecentMetrics` | 最近录入明细 | 按统计日期倒序，最多 100 条 |
 
 录入校验（都返回 `Success = false` + 中文原因，不抛异常）：
@@ -236,20 +237,44 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 - 账号已停用时拒绝录入；
 - 数据归属：`OwnerId` 为空表示共享账号（开发态种子账号），非空只对本人可见。这是开发期的过渡规则，飞书接入后收紧。
 
+### CSV 批量导入
+
+入口在平台连接页工具栏的「批量导入 CSV」，同一个 Dialog 里可以先下载模板。解析与校验都在 `MetricManager.ImportCsv`，**和手工录入共用 `MetricRules`**，所以同一份数据走两条路得到的结论一致。
+
+| 项 | 约定 |
+| --- | --- |
+| 必需列 | `platform`、`account`、`date`、`views`（缺列直接整文件拒绝，并提示缺哪几列） |
+| 可选列 | `likes`、`comments`、`shares`、`followers_new`，缺列按 0 处理 |
+| 表头别名 | 中文可直接用：平台 / 账号 / 日期 / 播放 / 点赞 / 评论 / 转发 / 新增粉丝（也认「阅读量」「涨粉」等 Excel 常见叫法） |
+| 单次上限 | 2000 数据行、4 MB；超限提示拆分文件，不截断 |
+| 账号匹配 | 平台 + 账号标识（忽略大小写、自动去 `@`）；`paused` 账号该行报错 |
+| 重复数据 | 库里已有的同账号同日记录按**覆盖**计 `updated`；同一文件内重复以靠后的行为准，计 `duplicateRows` |
+| 错误策略 | 逐行独立校验，错误行不写入；其余行照常入库，全部失败时才整体不写。错误明细带**物理行号**（含表头偏移与引号内换行），最多返回 20 条，超出时置 `errorsTruncated` |
+| 数字容错 | 接受千分位 `12,000`、Excel 导出的 `12000.0`；小数、负数、空播放视为错误并指出具体行 |
+| 未识别列 | 不报错，写入 `warning` 提示「已忽略未识别的列：xxx」，避免多一列统计字段就整份导不进去 |
+
+- 编码兼容 UTF-8 BOM 与 CRLF（Excel「另存为 CSV」的默认产物），字段内的引号与逗号按 RFC 4180 处理。
+- `views` 留空不会被当成 0：空值意味着「这行可能漏填」，宁可报错也不写脏数据。
+- 写库走 `IDatabaseAccessor.UpsertDocuments`（单 session / 单次 `SaveAll`），避免逐条写导致本地 JSON 实现反复全量重写；1000 行实测约 20–120 ms。
+- 导入后的首页「数据来源」会显示 `CSV 导入 n 条`（`DashboardDataSourceDto.CsvCount`），与手工录入分开计数。
+
 ### 机会与风险判定规则
 
-`DashboardManager.GetSummary` 同时返回 `Opportunities` 与 `Risks`，两者都从区间内的 `MetricDaily` 现场算，结论文案里的 `SignalPolicy` 由后端生成，前端直接展示，避免「这些结论哪来的」说不清。
+`DashboardManager.GetSummary` 同时返回 `Opportunities` 与 `Risks`，两者都从区间内的 `MetricDaily` 现场算，结论文案里的 `SignalPolicy` 由后端按**当前生效阈值**生成，前端直接展示，避免「这些结论哪来的」说不清。
 
-| 类别 | 规则 | 阈值常量 |
-| --- | --- | --- |
-| 爆款机会 | 单日播放 ≥ 该账号区间日均的 2 倍，且 ≥ 1,000 | `BreakoutMultiplier` / `BreakoutMinViews` |
-| 掉速风险 | 后段日均播放较前段下降 ≥ 30%（前段无数据则跳过） | `DeclineThreshold` |
-| 互动偏低 | 区间互动率 < 1%（播放 ≥ 1,000 才判） | `LowInteractionRate` |
-| 缺数据 | 未停用账号近 3 天没有日记录（区间内新建的账号不判） | `StaleDays` |
+阈值存 `SignalThresholdConfig`（单例文档，主键固定），可在 `/settings` 页面修改，保存即生效；库里没有这条文档时按默认值计算。下表的「默认」列就是 `SignalThresholdDefaults` 的取值。
 
+| 类别 | 规则 | 字段 | 默认 | 允许范围 |
+| --- | --- | --- | --- | --- |
+| 爆款机会 | 单日播放 ≥ 该账号区间日均的 N 倍，且 ≥ M | `BreakoutMultiplier` / `BreakoutMinViews` | 2 倍 / 1,000 | 1.1–10 / 0–100,000,000 |
+| 掉速风险 | 后段日均播放较前段下降 ≥ N%（前段无数据则跳过） | `DeclineThresholdPercent` | 30% | 1–90% |
+| 互动偏低 | 区间互动率 < N%（播放 ≥ 爆款下限才判） | `LowInteractionRatePercent` | 1% | 0.1–50% |
+| 缺数据 | 未停用账号近 N 天没有日记录（区间内新建的账号不判） | `StaleDays` | 3 天 | 1–30 |
+
+- 阈值存正数表示「下降 ≥ N%」，避免表单里出现负号；判定时比较的是 `rate <= -DeclineThresholdPercent`。
 - 每个账号在同一时刻只报一条风险，按「掉速 > 互动偏低 > 缺数据」取最严重的一条，避免一个账号占满面板。
-- 两个区块各最多 3 条，机会按倍数倒序、风险按严重度与幅度排序。
-- 阈值是代码常量而非库内配置：先让口径跑通，可配阈值留给后续版本；改常量必须同步 `BuildSignalPolicy` 的文案。
+- 两个区块各最多 3 条，机会按倍数倒序、风险按严重度与幅度排序；这两个上限是展示规则，不做成配置。
+- 规则文案只有一处来源（`SignalPolicyText`）：首页与设置页的「当前生效口径」用的是同一段文字，改阈值后两边自动一致。
 - 没有命中时返回空列表，前端显示「区间内没有账号达到阈值」，不生成「疑似机会」这类推测行。
 
 ---
@@ -281,15 +306,15 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 | 路径 | 页面 | 状态 |
 | --- | --- | --- |
-| `/` | 工作台首页（Dashboard） | 静态实现；已挂 `ProtectedRoute` |
+| `/` | 工作台首页（Dashboard） | 已挂 `ProtectedRoute` |
 | `/login` | 登录 | 已实现（账号密码）；飞书免登待接入 |
 | `/business` | 商务合作列表 | 占位 |
 | `/business/:dealId` | 合作单详情 | 占位 |
 | `/plans` | 内容计划列表 | 未建立（仅有详情占位） |
 | `/plans/:planId` | 内容计划详情 | 占位 |
-| `/connections` | 平台连接列表 | 未建立（仅有详情占位） |
+| `/connections` | 平台连接列表 | 已实现（账号管理 + 手工录入 + CSV 导入） |
 | `/connections/:platform` | 平台连接详情 | 占位 |
-| `/settings` | 设置（阈值、默认视图、通知渠道） | 未建立 |
+| `/settings` | 设置（阈值、默认视图、通知渠道） | 已实现阈值配置；默认视图、通知渠道未做 |
 | `/analysis/:viewId` | 数据分析视图 | 占位；产品文档未列此页，待并入首页管理面板后下线 |
 | `/unauthorized` | 无权限 | 已统一文案与样式 |
 | `*` | 404 | 已统一文案与样式 |
@@ -370,7 +395,8 @@ git status --ignored --short | grep -E "\.env|appsettings"
 2. **角色口径对齐**
    - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
    - 业务接口按权限矩阵挂 `[RequireRole(...)]`。
-3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 四个 KPI 与平台走势已完成，机会/风险、待办、合作单摘要待补）
+3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 四个 KPI、平台走势、机会/风险已完成，待办、合作单摘要待补）
+   - 机会/风险阈值已可配：`/settings` 改完保存即生效，规则文案与首页同源（`SignalPolicyText`）。
 4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。
 
 ### P1 — 让页面「可用、可信」

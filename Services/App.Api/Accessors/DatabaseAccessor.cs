@@ -34,6 +34,25 @@ namespace App.Api.Accessors
         }
 
         /// <summary>
+        /// 批量 Upsert：所有文档在同一个 session 内写入，只提交一次。
+        /// </summary>
+        public async Task UpsertDocuments<T>(IEnumerable<T> documents) where T : BaseEntity
+        {
+            if (documents == null) throw new ArgumentNullException(nameof(documents));
+
+            var items = documents.ToList();
+            if (items.Count == 0) return;
+
+            await using IDocumentSession session = _store.LightweightSession();
+            foreach (var document in items)
+            {
+                session.Store(document);
+            }
+
+            await session.SaveChangesAsync();
+        }
+
+        /// <summary>
         /// Inserts a new document of type T with a new Guid Id, ensuring it's treated as new.
         /// </summary>
         public async Task InsertDocument<T>(T document) where T : BaseEntity

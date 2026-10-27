@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Link2, Pencil, Plus, RefreshCw, Save } from 'lucide-react';
+import { ArrowLeft, FileDown, Link2, Pencil, Plus, RefreshCw, Save, Upload } from 'lucide-react';
 import PageShell from '@/components/dashboard/PageShell';
 import { Panel, PanelBody, PanelHeader } from '@/components/dashboard/Panel';
 import StatusPill, { type StatusTone } from '@/components/dashboard/StatusPill';
@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/select';
 import PlatformAccountManager from '@/api/PlatformAccountManager';
 import MetricManager from '@/api/MetricManager';
-import { MetricEntryDto, PlatformAccountDto } from '@/api/AppDtos';
+import { ImportMetricsCsvResultDto, MetricEntryDto, PlatformAccountDto } from '@/api/AppDtos';
 import { formatCompactNumber } from '@/lib/format';
 import { PLATFORM_LABELS, getPlatformLabel } from '@/utils/platforms';
 
@@ -40,7 +40,26 @@ const accountStatusMeta: Record<string, { label: string; tone: StatusTone }> = {
 const sourceMeta: Record<string, { label: string; tone: StatusTone }> = {
   api: { label: '接口同步', tone: 'success' },
   manual: { label: '手工录入', tone: 'info' },
+  csv: { label: 'CSV 导入', tone: 'info' },
   seed: { label: '开发态示例', tone: 'default' },
+};
+
+/** 模板只给两行示例，列顺序与后端表头别名一一对应。 */
+const CSV_TEMPLATE = [
+  'platform,account,date,views,likes,comments,shares,followers_new',
+  'douyin,@shuishui,2026-10-20,186000,9200,410,320,860',
+  'wechat-official,@shuishui-daily,2026-10-20,63000,2100,180,95,240',
+].join('\n');
+
+const downloadCsvTemplate = () => {
+  // 加 BOM，否则 Excel 打开中文列会乱码。
+  const blob = new Blob([`\ufeff${CSV_TEMPLATE}\n`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'mediaai-daily-metrics-template.csv';
+  link.click();
+  URL.revokeObjectURL(url);
 };
 
 const todayString = () => {
@@ -110,6 +129,13 @@ const ConnectionsView = () => {
   const [metricForm, setMetricForm] = useState<MetricFormState>(emptyMetricForm(''));
   const [metricFormError, setMetricFormError] = useState('');
   const [savingMetric, setSavingMetric] = useState(false);
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importContent, setImportContent] = useState('');
+  const [importError, setImportError] = useState('');
+  const [importResult, setImportResult] = useState<ImportMetricsCsvResultDto | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const reload = useCallback(() => setReloadKey((value) => value + 1), []);
 
@@ -260,6 +286,67 @@ const ConnectionsView = () => {
     }
   };
 
+  const openImportDialog = () => {
+    setImportFileName('');
+    setImportContent('');
+    setImportError('');
+    setImportResult(null);
+    setImportDialogOpen(true);
+  };
+
+  const handleCsvFile = async (file: File | null) => {
+    setImportResult(null);
+    setImportError('');
+
+    if (!file) {
+      setImportFileName('');
+      setImportContent('');
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      setImportFileName(file.name);
+      setImportContent('');
+      setImportError('只支持 .csv 文件；Excel 请先「另存为 CSV UTF-8」。');
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      setImportFileName(file.name);
+      setImportContent(text);
+    } catch {
+      setImportFileName(file.name);
+      setImportContent('');
+      setImportError('文件读取失败，请确认文件没有被 Excel 独占打开。');
+    }
+  };
+
+  const submitImport = async () => {
+    if (!importContent) {
+      setImportError('请先选择 CSV 文件。');
+      return;
+    }
+
+    setImporting(true);
+    setImportError('');
+
+    try {
+      const result = await MetricManager.ImportCsv({ FileName: importFileName, Content: importContent });
+      setImportResult(result);
+      setFeedback({
+        tone: result.Success ? (result.FailedRows > 0 ? 'warning' : 'success') : 'destructive',
+        text: result.Message,
+      });
+
+      if (result.Success) reload();
+    } catch {
+      setImportError('导入失败，后端接口不可用。');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const activeCount = accounts.filter((account) => account.Status !== 'paused').length;
 
   return (
@@ -300,6 +387,10 @@ const ConnectionsView = () => {
               />
               显示已停用
             </label>
+            <Button variant="outline" size="sm" onClick={openImportDialog}>
+              <Upload className="size-4" />
+              批量导入 CSV
+            </Button>
             <Button variant="outline" size="sm" onClick={() => openMetricDialog()}>
               <Save className="size-4" />
               录入日指标
@@ -474,6 +565,107 @@ const ConnectionsView = () => {
           ) : null}
         </PanelBody>
       </Panel>
+
+      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>批量导入 CSV</DialogTitle>
+            <DialogDescription>
+              必填列 platform、account、date、views，其余列留空按 0 处理；表头支持中文（平台 / 账号 / 日期 /
+              播放）。账号必须已存在，同账号同一天会覆盖原记录。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                id="csv-file-input"
+                type="file"
+                accept=".csv,text/csv"
+                className="block w-full max-w-sm cursor-pointer rounded-xl border border-border/60 bg-background px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-xs file:font-medium"
+                onChange={(event) => handleCsvFile(event.target.files?.[0] ?? null)}
+              />
+              <Button variant="outline" size="sm" onClick={downloadCsvTemplate}>
+                <FileDown className="size-4" />
+                下载模板
+              </Button>
+            </div>
+
+            {importFileName ? (
+              <p className="text-xs text-muted-foreground">
+                已选择 {importFileName} · {importContent ? `${importContent.split('\n').length} 行文本` : '未读取到内容'}
+              </p>
+            ) : null}
+
+            {importError ? <p className="text-sm text-destructive">{importError}</p> : null}
+
+            {importResult ? (
+              <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/30 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusPill
+                    tone={
+                      !importResult.Success ? 'destructive' : importResult.FailedRows > 0 ? 'warning' : 'success'
+                    }
+                  >
+                    {importResult.Message}
+                  </StatusPill>
+                </div>
+
+                <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                  <div className="rounded-xl bg-background/70 px-3 py-2">
+                    <dt className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">数据行</dt>
+                    <dd className="mt-1 font-medium tabular-nums">{importResult.TotalRows}</dd>
+                  </div>
+                  <div className="rounded-xl bg-background/70 px-3 py-2">
+                    <dt className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">新增</dt>
+                    <dd className="mt-1 font-medium tabular-nums">{importResult.CreatedRows}</dd>
+                  </div>
+                  <div className="rounded-xl bg-background/70 px-3 py-2">
+                    <dt className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">覆盖</dt>
+                    <dd className="mt-1 font-medium tabular-nums">{importResult.UpdatedRows}</dd>
+                  </div>
+                  <div className="rounded-xl bg-background/70 px-3 py-2">
+                    <dt className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">失败</dt>
+                    <dd className="mt-1 font-medium tabular-nums">{importResult.FailedRows}</dd>
+                  </div>
+                </dl>
+
+                {importResult.Warning ? (
+                  <p className="text-xs leading-5 text-muted-foreground">{importResult.Warning}</p>
+                ) : null}
+
+                {importResult.Errors.length > 0 ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-destructive">以下行没有写入，修正后可重新导入：</p>
+                    <ul className="max-h-40 space-y-1 overflow-y-auto pr-1 text-xs leading-5 text-destructive">
+                      {importResult.Errors.map((error) => (
+                        <li key={`${error.RowNumber}-${error.Message}`} className="font-mono">
+                          第 {error.RowNumber} 行：{error.Message}
+                        </li>
+                      ))}
+                    </ul>
+                    {importResult.ErrorsTruncated ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        仅显示前 {importResult.Errors.length} 条，共 {importResult.FailedRows} 行失败。
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setImportDialogOpen(false)}>
+              关闭
+            </Button>
+            <Button onClick={submitImport} disabled={importing || !importContent}>
+              <Upload className="size-4" />
+              {importing ? '导入中…' : '开始导入'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={accountDialogOpen} onOpenChange={setAccountDialogOpen}>
         <DialogContent className="sm:max-w-md">

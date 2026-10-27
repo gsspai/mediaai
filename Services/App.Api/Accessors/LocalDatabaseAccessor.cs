@@ -58,6 +58,34 @@ namespace App.Api.Accessors
             await SaveAll(list);
         }
 
+        public async Task UpsertDocuments<T>(IEnumerable<T> documents) where T : BaseEntity
+        {
+            var incoming = documents.ToList();
+            if (incoming.Count == 0) return;
+
+            var list = await LoadAll<T>();
+            var positions = new Dictionary<Guid, int>();
+            for (var i = 0; i < list.Count; i++)
+            {
+                positions[list[i].Id] = i;
+            }
+
+            foreach (var document in incoming)
+            {
+                if (positions.TryGetValue(document.Id, out var index))
+                {
+                    list[index] = document;
+                }
+                else
+                {
+                    positions[document.Id] = list.Count;
+                    list.Add(document);
+                }
+            }
+
+            await SaveAll(list);
+        }
+
         public async Task InsertDocument<T>(T document) where T : BaseEntity
         {
             var list = await LoadAll<T>();

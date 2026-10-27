@@ -166,6 +166,63 @@
 - CDP：首页两个面板分别渲染「1 个触发」「2 个需排查」，页面不再出现旧占位文案「供应链幕后」「周末热点追踪」，判定规则行正常展示。
 - `dotnet build` 0 错误、`tsc --noEmit` 0 错误、`vitest` 8 条通过。
 
+### 2.9 阈值可配（2b）
+
+代码：
+
+- `Contracts.Domain.Database.SignalThresholdConfig`：单例文档（主键固定 `SignalThresholdDefaults.SingletonId`），五个阈值 + `UpdatedAt` / `UpdatedBy`；`SignalThresholdDefaults` 同时是默认值与「库里没有配置」时的取值来源。
+- `SignalPolicyText`（Utilities）：判定规则文案的唯一来源，首页与实际计算共用，`Describe(days, config)`。
+- `SignalThresholdStore`（Utilities）：`LoadAsync` 读配置、缺省回落默认值（不写库）；`DescribeSource` 生成「当前使用默认阈值 / 阈值更新于 … · email」。
+- `SettingsManager`：`GetSignalThresholds` / `SaveSignalThresholds`，范围校验失败返回 `Success = false` + 中文原因，不抛异常；保存走 `UpsertDocument` + 固定主键，不会写出第二条。
+- `DashboardManager.BuildSignals` 改为接收 `SignalThresholdConfig`，四个判定点全部读配置；`DashboardSummaryDto` 新增 `SignalPolicyTrace`。
+- 前端：新增 `/settings`（`SettingsView.tsx`）——五项数字输入、保存反馈、当前生效口径与来源；首页数据来源行增加「调整判定阈值」入口，判定规则行右侧显示阈值来源。
+- `Program.cs`：`services.AddScoped<SettingsManager>()`。
+
+判定规则（以下为默认值，可在 `/settings` 修改）：
+
+| 类别 | 规则 | 字段 | 默认 | 允许范围 |
+| --- | --- | --- | --- | --- |
+| 爆款机会 | 单日播放 ≥ 账号区间日均 N 倍且 ≥ M | `BreakoutMultiplier` / `BreakoutMinViews` | 2 倍 / 1,000 | 1.1–10 / 0–100,000,000 |
+| 掉速风险 | 后段日均较前段下降 ≥ N% | `DeclineThresholdPercent` | 30% | 1–90% |
+| 互动偏低 | 区间互动率 < N%（播放 ≥ 爆款下限才判） | `LowInteractionRatePercent` | 1% | 0.1–50% |
+| 缺数据 | 未停用账号近 N 天无记录 | `StaleDays` | 3 天 | 1–30 |
+
+- 阈值存正数表示「下降 ≥ N%」，代码里判定为 `rate <= -DeclineThresholdPercent`，避免表单里出现负号。
+- 每块仍最多 3 条、同一账号只报一条风险；这部分是展示规则，不做成配置。
+
+验证：
+
+- `dotnet build` 0 错误、`tsc --noEmit` 0 错误、`npm run build` 成功、`vitest run` 8 条通过。
+- 隔离实例（`AppConfiguration__AppName=MediaAI-SmokeThr`，5126）脚本 13 项全通过：默认读取 → 越界拒绝（倍数 20 报「1.1 到 10 之间」）→ 保存 3x / 5,000 / 40% / 1.5% / 5 天 → 回带 Policy 按新值生成 → 保存人 = 当前账号 → 重新读取仍是自定义 → `UpdatedAt` 为 `yyyy-MM-dd HH:mm` → `GetSummary.SignalPolicy` 与设置页 Policy 逐字一致、`SignalPolicyTrace` 带邮箱 → 可保存回默认值。
+- 未做浏览器端验证：本机无 playwright、项目未装，`/settings` 的渲染正确性目前只由 `tsc` + `npm run build` 保证。
+
+### 2.10 CSV 批量导入（本轮）
+
+代码：
+
+- `Utilities/CsvTable.cs`：RFC 4180 解析（引号转义、字段内逗号与换行、CRLF、UTF-8 BOM），`CsvRow.LineNumber` 记录**物理行号**，引号内换行不会让后续行号错位。
+- `Utilities/MetricRules.cs`：`TryParseDate` + `ValidateCounts`，从 `IngestManual` 里抽出来，手工录入与批量导入共用同一套中文报错。
+- `Utilities/MetricImportEntry.cs`：导入中间态（`PendingMetric` 原计划放 Manager 内，但 `App.Api.Managers` 命名空间只允许 `IManagerService` 实现，分析器会报 RIDE0001，故移到 `Utilities`）。
+- `MetricManager.ImportCsv(ImportMetricsCsvRequestDto)`：`FileName` + `Content`（整份文本，不走 multipart）。上限 2000 数据行 / 4 MB；必需列 `platform,account,date,views`，缺列整份拒绝并列出缺哪几列；表头别名支持中文（平台 / 账号 / 日期 / 播放 / 点赞 / 评论 / 转发 / 新增粉丝）；未识别列不报错，写进 `Warning`。
+- 账号匹配用 `AccountKey(Platform, Handle)`（`@` 去掉、大小写不敏感），`paused` 账号该行报错；行内数字支持千分位与 Excel 的 `12000.0`，`views` 为空视为漏填报错而不是当 0。
+- 文件内同账号同日重复：后者覆盖前者，计 `DuplicateRows`；库里已有记录按覆盖计 `UpdatedRows`，写入 `Source = csv` + `RecordedBy = 当前登录邮箱`。
+- `IDatabaseAccessor.UpsertDocuments<T>`：Local 实现一次 `SaveAll`，Marten 实现单 session 提交。之前逐条 `UpsertDocument` 在本地 JSON 实现下会反复全量重写，1000 行是 O(n²) 级别。
+- `DashboardDataSourceDto.CsvCount` + `DashboardManager.BuildDataSource` 的「CSV 导入 n 条」文案。
+- 前端 `ConnectionsView`：工具栏「批量导入 CSV」按钮 + Dialog（选文件、下载带 BOM 的模板、结果四宫格、Warning、错误行「第 N 行：…」、超出 20 条提示截断）。
+
+错误策略：逐行独立校验，坏行不写、好行照常入库；**全部行都失败时整体不写**并在 `Message` 里说明，避免「一半成功」难对账。
+
+验证：
+
+- 隔离实例 `AppConfiguration__AppName=MediaAI-Smoke`（5127），`/tmp/test_import.py` + `/tmp/test_edge.py` 全部通过。
+- 混合文件：5 类错误分别命中（不支持的平台 `tiktok`、账号不存在、`2026-13-01`、互动数超播放、账号已停用），错误行号 5–9 与实际物理行一致。
+- 中文表头 + BOM + CRLF + 引号内逗号：导入成功，无 warning。
+- 覆盖：同账号同日再导 → `created 0 / updated 1`；未知列 `saves` → 只出 warning 不失败；`12000.0` 正常，空播放与 `12.5` 按行报错；列数少于表头按行报错。
+- 1000 行（450 唯一 + 550 重复）：`耗时 22 ms`，`新增 450 行，文件内重复 550 行`（改造前逐条写会到秒级）。
+- 首页来源：导入窗口内日期后 `DataSource.Label` = `CSV 导入 3 条 · 9 个账号 / 3 条日记录`，`CsvCount = 3`、`ManualCount = 0`。
+- `dotnet build` 0 错误、`tsc --noEmit` 0 错误。
+- 未做浏览器端验证：导入 Dialog 的实际渲染只由 `tsc` 保证，没跑过 CDP。
+
 ---
 
 ## 3. 遗留问题
@@ -173,10 +230,10 @@
 | # | 问题 | 影响 | 状态 |
 | --- | --- | --- | --- |
 | 1 | `/analysis/:viewId` 路由去留未定 | 产品文档只有 6 个页面，此路由无对应页面，代码仍指向占位视图 | **待用户决定** |
-| 2 | 业务角色已定义，但没有任何接口挂 `[RequireRole(...)]` | 权限矩阵尚未生效，越权访问仍可能通过 | 待做（随接口落地） |
+| 2 | 业务角色已定义，但没有任何接口挂 `[RequireRole(...)]` | 权限矩阵尚未生效，越权访问仍可能通过。`/settings` 也只挂了 `[RequireAuthenticated]`，任何登录用户都能改阈值 | 待做（随接口落地） |
 | 3 | 飞书免登未接入 | `/auth/feishu/callback` 与 `FeishuManager` 不存在，登录页只支持账号密码 | 待做（P0） |
 | 4 | 首页 KPI、平台走势、爆款机会、限流风险已接接口；执行列表（商务 / 计划 / 待办）与管理层概览仍是前端常量 | 验收第 1 条对首页指标与信号区块已成立；下钻明细仍无 | 部分完成 |
-| 4b | 指标来源只有手工录入，平台 API 同步未接 | 录入靠人，量级一大就不可持续；`Source = api` 尚无写入方 | 待做（M1-4） |
+| 4b | 指标来源为手工录入 + CSV 导入，平台 API 同步未接 | 已能用表格批量灌数，但仍需人导出再上传；`Source = api` 尚无写入方 | 待做（M1-4） |
 | 5 | ~~`/` 未挂 `ProtectedRoute`~~ | 已完成 | ✅ |
 | 6 | 无任何自动化测试与 CI | 改动靠人工验证 | 未规划 |
 | 7 | 推文文案只存在于对话中 | X / Facebook 两版成稿未落文件，若要发布需重新生成 | 未落地 |
@@ -196,8 +253,8 @@
 
 1. ~~**手工录入 / 接口同步入口**：`MetricManager.UpsertDaily` + `PlatformAccountManager` 增删改查 + 「平台连接」页~~ — 已完成手工模式（见 2.7），接口同步仍未做
 2. ~~**首页剩余区块接接口**：爆款机会、限流风险~~ — 已完成（见 2.8）；执行列表与合作单摘要仍未接，需要先有 `BusinessManager` / `PlanManager`
-2b. **阈值可配**（下一步小步）：把 `BuildSignals` 的四个常量挪到 `SignalThresholdConfig` 文档，管理面板可改，改完 `SignalPolicy` 自动跟着变。
-3. **批量导入**：手工单条录入只能应急。给运营一个 CSV 导入（账号、日期、播放、互动），复用 `MetricManager` 的校验与 `Source = manual`，比逐个平台谈 API 快得多。
+2b. ~~**阈值可配**：把 `BuildSignals` 的四个常量挪到 `SignalThresholdConfig` 文档，管理面板可改，改完 `SignalPolicy` 自动跟着变~~ — 已完成（见 2.9）；后续可接 `[RequireRole("admin")]` 与操作审计
+3. ~~**批量导入**：给运营一个 CSV 导入（账号、日期、播放、互动），复用 `MetricManager` 的校验~~ — 已完成（见 2.10，`Source = csv`）；后续可加导入历史与失败行导出
 4. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
 5. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
 6. **`/analysis/:viewId` 去留**（一行决定，可随时处理）
@@ -218,6 +275,7 @@
 - **`AuthManager.Login` / `SignUp` 返回的 token 在 `Result` 里面**，不在信封顶层。脚本取 token 时按 `Result.AccessToken` / `Result.RefreshToken` 读。
 - **ServiceInvoker 的方法返回值必须是 DTO 类型**：返回 `List<T>` 会被 `ServiceMethodInvoker` 判为非法返回值并抛异常。列表统一包 `{ Items: [...] }`。
 - Manager 里做参数校验时不要抛异常——异常会变成 500 Problem 带堆栈，前端拿不到中文原因；改用 `Success = false` 的 Result DTO。
+- **新增 Manager 必须在 `Program.cs` 的 `GetScopedServices` 里 `AddScoped` 注册**。反射只负责发现方法，实例仍从 DI 取；漏注册时 `/api/invoke` 直接返回 500，且控制台**没有任何堆栈**，很容易误判成业务逻辑问题。
 
 ### 5.2 本地环境
 
@@ -239,3 +297,13 @@
 ### 5.4 验证现状
 
 线上地址 `https://gsspai.github.io/mediaai/` 已确认返回 200，且含移动端 CSS（`max-width:768px`）。桌面与四档移动视口均无横向溢出。
+
+2.9 / 2.10 的验证记录：
+
+- `dotnet build Services/Services.sln` → 0 错误（4 条 Marten 7.37.1 的 NU1904 告警是历史遗留）。
+- `npm run check-ts`、`npm run build`、`npx vitest run --mode test` 全部通过。
+- 阈值接口在 5126 隔离实例上 13 项断言全通过；验证数据目录 `~/CodeBuddy/Resources/MediaAI-SmokeThr/`，已保存回默认阈值。
+- CSV 导入在 5127 隔离实例（`AppConfiguration__AppName=MediaAI-Smoke`）上跑完混合错误、中文表头、覆盖、未知列、千分位/小数、空播放、列数不足、BOM+CRLF+引号、空内容、未来日期、1000 行性能共 11 组用例，全部符合预期。
+- **注意**：`npm run test` 是 watch 模式（`vitest --mode test`），非交互环境下会一直挂住，请用 `npx vitest run --mode test`。
+- **注意**：验证脚本里的统计日期必须落在 `GetSummary` 的窗口内（`Days` 默认 7，`today-1` 起算最稳），否则 `DataSource.Label` 会显示「区间内暂无数据」，看着像导入失败。
+- 本机 `dotnet` 曾被系统判为签名失效（进程 SIGKILL），修复方式：`codesign --force --sign - /Users/shuishui/Tools/dotnet/dotnet`。生产环境启动会连 Supabase，本机网络不可达，验证一律用 `ASPNETCORE_ENVIRONMENT=Development`（`LocalAuthAccessor` + 本地 JSON）。

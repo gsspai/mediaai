@@ -39,7 +39,7 @@ public class MetricDaily : BaseEntity
     public int NewFollowers { get; set; }
 
     /// <summary>
-    /// 数据来源：api（接口同步）/ manual（手工录入）/ seed（开发态示例）。
+    /// 数据来源：api（接口同步）/ manual（手工录入）/ csv（批量导入）/ seed（开发态示例）。
     /// </summary>
     public string Source { get; set; } = MetricSource.Manual;
 
@@ -58,5 +58,11 @@ public static class MetricSource
 {
     public const string Api = "api";
     public const string Manual = "manual";
+
+    /// <summary>
+    /// CSV 批量导入。与 manual 分开记，是为了回答「这 800 行是谁一条条录的」时能一眼看出不是人干的。
+    /// </summary>
+    public const string Csv = "csv";
+
     public const string Seed = "seed";
 }

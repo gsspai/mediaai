@@ -147,6 +147,7 @@ export interface DashboardPlatformTrendDto {
 
 export interface DashboardDataSourceDto {
   ManualCount: number;
+  CsvCount: number;
   ApiCount: number;
   SeedCount: number;
   Label: string;
@@ -164,6 +165,7 @@ export interface DashboardSummaryDto {
   Opportunities: DashboardSignalDto[];
   Risks: DashboardSignalDto[];
   SignalPolicy: string;
+  SignalPolicyTrace: string;
 }
 
 /** 机会 / 风险区块的一行，Title 是账号展示名，Trace 说明触发依据。 */
@@ -264,4 +266,64 @@ export interface MetricIngestResultDto {
 export interface ListRecentMetricsRequestDto {
   AccountId: string | null;
   Take: number;
+}
+
+export interface ImportMetricsCsvRequestDto {
+  FileName: string;
+  /** 完整 CSV 文本（含表头），前端用 FileReader 读出来直接提交。 */
+  Content: string;
+}
+
+export interface MetricImportErrorDto {
+  /** 文件物理行号（1 开始，含表头），用于定位到具体哪一行。 */
+  RowNumber: number;
+  Message: string;
+}
+
+export interface ImportMetricsCsvResultDto {
+  Success: boolean;
+  Message: string;
+  TotalRows: number;
+  CreatedRows: number;
+  UpdatedRows: number;
+  DuplicateRows: number;
+  FailedRows: number;
+  Errors: MetricImportErrorDto[];
+  ErrorsTruncated: boolean;
+  Warning: string;
+}
+
+/** 读取阈值配置的请求，目前没有筛选条件，保留空对象以符合一方法一入参的约定。 */
+export interface GetSignalThresholdsRequestDto {}
+
+/**
+ * 机会 / 风险阈值。IsCustomized 为 false 表示库里没有配置、当前走默认值。
+ * Policy 是后端按当前阈值生成的判定规则文案，前端直接展示，不自己拼。
+ */
+export interface SignalThresholdDto {
+  BreakoutMultiplier: number;
+  BreakoutMinViews: number;
+  /** 正数，表示「下降 ≥ N%」。 */
+  DeclineThresholdPercent: number;
+  LowInteractionRatePercent: number;
+  StaleDays: number;
+  IsCustomized: boolean;
+  /** yyyy-MM-dd HH:mm，默认阈值时为空字符串。 */
+  UpdatedAt: string;
+  UpdatedBy: string;
+  Policy: string;
+}
+
+export interface SaveSignalThresholdRequestDto {
+  BreakoutMultiplier: number;
+  BreakoutMinViews: number;
+  DeclineThresholdPercent: number;
+  LowInteractionRatePercent: number;
+  StaleDays: number;
+}
+
+export interface SaveSignalThresholdResultDto {
+  Success: boolean;
+  Message: string;
+  Thresholds: SignalThresholdDto;
 }
