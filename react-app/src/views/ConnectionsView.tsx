@@ -25,7 +25,10 @@ import {
 import PlatformAccountManager from '@/api/PlatformAccountManager';
 import MetricManager from '@/api/MetricManager';
 import { ImportMetricsCsvResultDto, MetricEntryDto, PlatformAccountDto } from '@/api/AppDtos';
+import useAuthStore from '@/auth/AuthStore';
 import { formatCompactNumber } from '@/lib/format';
+import { resolveErrorText } from '@/utils/errors';
+import { canManageAccounts, readOnlyNotice } from '@/utils/permissions';
 import { PLATFORM_LABELS, getPlatformLabel } from '@/utils/platforms';
 
 type LoadStatus = 'loading' | 'ready' | 'error';
@@ -112,6 +115,10 @@ const toNumber = (value: string): number => {
 };
 
 const ConnectionsView = () => {
+  const roles = useAuthStore((state) => state.session?.Roles ?? []);
+  // 权限矩阵：平台账号连接归管理员与运营；其他角色（含访客）只读，按钮不渲染，越权请求后端也会 403。
+  const canEdit = canManageAccounts(roles);
+
   const [accounts, setAccounts] = useState<PlatformAccountDto[]>([]);
   const [accountsStatus, setAccountsStatus] = useState<LoadStatus>('loading');
   const [entries, setEntries] = useState<MetricEntryDto[]>([]);
@@ -230,8 +237,8 @@ const ConnectionsView = () => {
       setAccountDialogOpen(false);
       setFeedback({ tone: 'success', text: result.Message });
       reload();
-    } catch {
-      setAccountFormError('保存失败，后端接口不可用。');
+    } catch (error) {
+      setAccountFormError(resolveErrorText(error, '保存失败，后端接口不可用。'));
     } finally {
       setSavingAccount(false);
     }
@@ -246,8 +253,8 @@ const ConnectionsView = () => {
       const result = await PlatformAccountManager.DisableAccount({ AccountId: account.Id });
       setFeedback({ tone: result.Success ? 'success' : 'destructive', text: result.Message });
       if (result.Success) reload();
-    } catch {
-      setFeedback({ tone: 'destructive', text: '停用失败，后端接口不可用。' });
+    } catch (error) {
+      setFeedback({ tone: 'destructive', text: resolveErrorText(error, '停用失败，后端接口不可用。') });
     }
   };
 
@@ -279,8 +286,8 @@ const ConnectionsView = () => {
       setMetricDialogOpen(false);
       setFeedback({ tone: result.Updated ? 'warning' : 'success', text: result.Message });
       reload();
-    } catch {
-      setMetricFormError('保存失败，后端接口不可用。');
+    } catch (error) {
+      setMetricFormError(resolveErrorText(error, '保存失败，后端接口不可用。'));
     } finally {
       setSavingMetric(false);
     }
@@ -340,8 +347,8 @@ const ConnectionsView = () => {
       });
 
       if (result.Success) reload();
-    } catch {
-      setImportError('导入失败，后端接口不可用。');
+    } catch (error) {
+      setImportError(resolveErrorText(error, '导入失败，后端接口不可用。'));
     } finally {
       setImporting(false);
     }
@@ -365,10 +372,12 @@ const ConnectionsView = () => {
                   返回工作台
                 </Link>
               </Button>
-              <Button size="sm" onClick={openCreateAccount}>
-                <Plus className="size-4" />
-                新增账号
-              </Button>
+              {canEdit ? (
+                <Button size="sm" onClick={openCreateAccount}>
+                  <Plus className="size-4" />
+                  新增账号
+                </Button>
+              ) : null}
             </div>
           }
         />
@@ -387,14 +396,18 @@ const ConnectionsView = () => {
               />
               显示已停用
             </label>
-            <Button variant="outline" size="sm" onClick={openImportDialog}>
-              <Upload className="size-4" />
-              批量导入 CSV
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => openMetricDialog()}>
-              <Save className="size-4" />
-              录入日指标
-            </Button>
+            {canEdit ? (
+              <>
+                <Button variant="outline" size="sm" onClick={openImportDialog}>
+                  <Upload className="size-4" />
+                  批量导入 CSV
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => openMetricDialog()}>
+                  <Save className="size-4" />
+                  录入日指标
+                </Button>
+              </>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={reload}>
               <RefreshCw className="size-4" />
               刷新
@@ -402,6 +415,15 @@ const ConnectionsView = () => {
           </div>
         </PanelBody>
       </Panel>
+
+      {canEdit ? null : (
+        <div
+          role="status"
+          className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3 text-sm leading-6 text-muted-foreground"
+        >
+          {readOnlyNotice()}
+        </div>
+      )}
 
       {feedback ? (
         <div
@@ -437,11 +459,15 @@ const ConnectionsView = () => {
         {accountsStatus === 'ready' && accounts.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-border/70 bg-background/60 px-6 py-10 text-center md:col-span-2 xl:col-span-3">
             <p className="text-sm font-medium">还没有任何平台账号</p>
-            <p className="mt-2 text-sm text-muted-foreground">先新增一个账号，再录入它今天的播放与互动数据。</p>
-            <Button className="mt-4" size="sm" onClick={openCreateAccount}>
-              <Plus className="size-4" />
-              新增账号
-            </Button>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {canEdit ? '先新增一个账号，再录入它今天的播放与互动数据。' : '当前账号为只读，等管理员或运营添加账号后再查看。'}
+            </p>
+            {canEdit ? (
+              <Button className="mt-4" size="sm" onClick={openCreateAccount}>
+                <Plus className="size-4" />
+                新增账号
+              </Button>
+            ) : null}
           </div>
         ) : null}
 
@@ -485,21 +511,23 @@ const ConnectionsView = () => {
                 近 7 天 {account.RecentMetricCount} 条记录 · 创建于 {account.CreatedAt}
               </p>
 
-              <div className="mt-auto flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" disabled={paused} onClick={() => openMetricDialog(account.Id)}>
-                  <Save className="size-4" />
-                  录入
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => openEditAccount(account)}>
-                  <Pencil className="size-4" />
-                  编辑
-                </Button>
-                {paused ? null : (
-                  <Button variant="ghost" size="sm" className="text-destructive" onClick={() => disableAccount(account)}>
-                    停用
+              {canEdit ? (
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" disabled={paused} onClick={() => openMetricDialog(account.Id)}>
+                    <Save className="size-4" />
+                    录入
                   </Button>
-                )}
-              </div>
+                  <Button variant="ghost" size="sm" onClick={() => openEditAccount(account)}>
+                    <Pencil className="size-4" />
+                    编辑
+                  </Button>
+                  {paused ? null : (
+                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => disableAccount(account)}>
+                      停用
+                    </Button>
+                  )}
+                </div>
+              ) : null}
             </article>
           );
         })}

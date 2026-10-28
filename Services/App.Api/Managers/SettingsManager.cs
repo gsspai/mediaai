@@ -1,5 +1,6 @@
 using App.Api.Accessors;
 using App.Api.Utilities;
+using App.Api.Utilities.Roles;
 using App.ServiceInvoker.Attributes;
 using App.ServiceInvoker.Interfaces;
 using Contracts.Domain.Database;
@@ -34,7 +35,10 @@ namespace App.Api.Managers
             _userContextService = userContextService;
         }
 
-        [RequireAuthenticated]
+        /// <summary>
+        /// 阈值属于「管理层面板」能力，按产品文档权限矩阵只对管理员开放；访客与其他角色一律 403。
+        /// </summary>
+        [RequireRole(Roles.Admin)]
         public async Task<SignalThresholdDto> GetSignalThresholds(GetSignalThresholdsRequestDto request)
         {
             var config = await SignalThresholdStore.LoadAsync(_databaseAccessor);
@@ -44,7 +48,7 @@ namespace App.Api.Managers
         /// <summary>
         /// 保存阈值并立刻生效。保存后首页的判定规则文案会跟着变，因为文案是按这份配置生成的。
         /// </summary>
-        [RequireAuthenticated]
+        [RequireRole(Roles.Admin)]
         public async Task<SaveSignalThresholdResultDto> SaveSignalThresholds(SaveSignalThresholdRequestDto request)
         {
             var error = Validate(request);

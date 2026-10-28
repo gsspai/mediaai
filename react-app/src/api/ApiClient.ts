@@ -9,6 +9,23 @@ export interface ApiClientRequestOptions {
   signal?: AbortSignal;
 }
 
+const FORBIDDEN_FALLBACK = '当前账号没有权限执行该操作，请联系管理员开通。';
+
+/**
+ * 403 的正文由后端 `[RequireRole]` 生成（例如「需要角色：admin / operations」），
+ * 这里原样取出，页面才能告诉用户该找谁开权限；取不到再回落到通用文案。
+ */
+const readForbiddenMessage = async (response: Response): Promise<string> => {
+  try {
+    const body = (await response.json()) as { Message?: unknown; message?: unknown } | null;
+    const raw = typeof body?.Message === 'string' ? body.Message : body?.message;
+    const message = typeof raw === 'string' ? raw.trim() : '';
+    return message || FORBIDDEN_FALLBACK;
+  } catch {
+    return FORBIDDEN_FALLBACK;
+  }
+};
+
 const invokeMethod = async <T>(
   serviceName: string,
   managerName: string,
@@ -40,7 +57,7 @@ const invokeMethod = async <T>(
   }
 
   if (response.status === 403) {
-    throw new Error('Forbidden');
+    throw new Error(await readForbiddenMessage(response));
   }
 
   if (!response.ok) {
@@ -87,7 +104,7 @@ const streamMethod = async (
   }
 
   if (response.status === 403) {
-    throw new Error('Forbidden');
+    throw new Error(await readForbiddenMessage(response));
   }
 
   if (!response.ok) {

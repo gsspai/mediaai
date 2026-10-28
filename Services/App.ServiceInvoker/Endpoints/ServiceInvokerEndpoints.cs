@@ -37,9 +37,14 @@ namespace App.ServiceInvoker.Endpoints
                     var result = await invoker.InvokeAsync(context.Request);
                     return Results.Json(result, jsonOptions);
                 }
-                catch (ForbiddenAccessException)
+                catch (ForbiddenAccessException ex)
                 {
-                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                    // 403 也带 JSON 正文，前端才能把「需要什么角色」原样显示出来；
+                    // 只回状态码时浏览器侧只能看到一句 Forbidden。
+                    return Results.Json(
+                        new { Success = false, Message = ex.Message },
+                        jsonOptions,
+                        statusCode: StatusCodes.Status403Forbidden);
                 }
                 catch (UnauthorizedAccessException)
                 {
@@ -77,9 +82,12 @@ namespace App.ServiceInvoker.Endpoints
                 {
                     return Results.Empty;
                 }
-                catch (ForbiddenAccessException)
+                catch (ForbiddenAccessException ex)
                 {
-                    return Results.StatusCode(StatusCodes.Status403Forbidden);
+                    return Results.Json(
+                        new { Success = false, Message = ex.Message },
+                        jsonOptions,
+                        statusCode: StatusCodes.Status403Forbidden);
                 }
                 catch (UnauthorizedAccessException)
                 {

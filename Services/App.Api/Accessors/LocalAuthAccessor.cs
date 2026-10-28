@@ -12,6 +12,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using App.Api.Utilities;
+using App.Api.Utilities.Roles;
 
 namespace App.Api.Accessors
 {
@@ -25,6 +26,7 @@ namespace App.Api.Accessors
         private const int MinSigningKeyLength = 32;
         private const string SigningKeyFileName = "local-signing.key";
         private readonly string _mockRefreshToken = "local-dev-static-refresh-token";
+        private readonly HashSet<string> _bootstrapAdminEmails;
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             WriteIndented = true
@@ -37,7 +39,17 @@ namespace App.Api.Accessors
             _userFilePath = Path.Combine(rootDir, "Users.json");
             _logger = logger;
             _signingKey = ResolveSigningKey(config, rootDir, logger);
+            _bootstrapAdminEmails = ParseAdminEmails(config.AdminEmails);
         }
+
+        /// <summary>
+        /// 解析 AppConfiguration:AdminEmails（逗号或分号分隔，大小写不敏感）。
+        /// 本地认证没有飞书用户组同步，这是唯一能让某个账号拿到 admin 角色的入口。
+        /// </summary>
+        private static HashSet<string> ParseAdminEmails(string? raw) =>
+            (raw ?? string.Empty)
+                .Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Resolves the development JWT signing key without ever shipping a key in source control:
@@ -209,6 +221,34 @@ namespace App.Api.Accessors
             return true;
         }
 
+        /// <summary>
+        /// 命 AppConfiguration:AdminEmails 的账号在登录 / 注册时补上 admin，并立刻落库。
+        /// 只在首次命中时写盘；角色已存在则直接跳过，避免每次登录都全量重写 Users.json。
+        /// </summary>
+        private async Task EnsureBootstrapAdminAsync(User user, List<User> users)
+        {
+            if (_bootstrapAdminEmails.Count == 0 || string.IsNullOrWhiteSpace(user.Email))
+            {
+                return;
+            }
+
+            if (!_bootstrapAdminEmails.Contains(user.Email))
+            {
+                return;
+            }
+
+            var roles = user.Roles?.ToList() ?? new List<string>();
+            if (roles.Contains(Roles.Admin, StringComparer.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            roles.Add(Roles.Admin);
+            user.Roles = roles.ToArray();
+            await SaveUsersAsync(users);
+            _logger.LogInformation("Granted bootstrap admin role to {Email} via AppConfiguration:AdminEmails.", user.Email);
+        }
+
         public async Task<(User? user, string? jwt, string? refreshToken, string error)> SignUp(string email, string password, string? name)
         {
             var users = await LoadUsersAsync();
@@ -224,6 +264,7 @@ namespace App.Api.Accessors
             };
             users.Add(user);
             await SaveUsersAsync(users);
+            await EnsureBootstrapAdminAsync(user, users);
             var jwt = GenerateJwt(user);
             return (user, jwt, _mockRefreshToken, string.Empty);
         }
@@ -234,6 +275,7 @@ namespace App.Api.Accessors
             var user = users.FirstOrDefault(u => string.Equals(u.Email, email, StringComparison.OrdinalIgnoreCase));
             if (user == null)
                 return (null, null, null, "Invalid email or user not found.");
+            await EnsureBootstrapAdminAsync(user, users);
             string jwt = GenerateJwt(user);
             return (user, jwt, _mockRefreshToken, string.Empty);
         }

@@ -1,13 +1,13 @@
 # HANDOFF
 
-> 交接文档 · 更新于 2026-10-19（第二次）
-> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 工作区干净，无未推送提交
+> 交接文档 · 更新于 2026-10-27
+> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 工作区改动未提交（本轮权限落地）
 
 ---
 
 ## 1. 当前进度
 
-最近五步：产品文档静态站点（`81ba382`）、认证闭环（`4100139`）、首页指标接真实接口（`3e1679c`）、账号与手工录入闭环（`65ea081`）、**爆款机会 / 限流风险接真实计算（本轮）**。
+最近几步：产品文档静态站点（`81ba382`）、认证闭环（`4100139`）、首页指标接真实接口（`3e1679c`）、账号与手工录入闭环（`65ea081`）、爆款机会 / 限流风险接真实计算、阈值可配 + CSV 批量导入（`8d43505`）、**业务角色权限落地（本轮，未提交）**。
 
 已到达的状态：
 
@@ -18,7 +18,9 @@
 - `/connections` 可用：新增 / 编辑 / 停用账号，手工录入任意一天指标，最近录入明细带来源与录入人；同账号同日覆盖，停用后拒绝录入。
 - 首页「爆款机会」「限流 / 掉速风险」由 `DashboardManager` 按日记录实时算，每条带触发值与依据，面板下方写明判定规则。
 
-**未开始**：飞书免登、业务角色落地（`[RequireRole]`）、平台 API 同步。执行列表（商务 / 计划 / 待办）与管理层概览仍是前端演示数据。
+- 权限矩阵已生效：阈值仅管理员可读写，账号与指标写接口限管理员 / 运营，访客只读；越权返回 403 + 中文原因，前端同步隐藏入口。
+
+**未开始**：飞书免登、`RoleMappingConfig` / 用户组同步、平台 API 同步。执行列表（商务 / 计划 / 待办）与管理层概览仍是前端演示数据。
 
 ---
 
@@ -28,6 +30,8 @@
 
 | 版本 | 时间 | 内容 |
 | --- | --- | --- |
+| （未提交） | 2026-10-27 | 业务角色权限落地：`[RequireRole]`、403 中文原因、管理员引导、前端入口按角色显隐 |
+| `8d43505` | 2026-10-27 | CSV 批量导入（`MetricManager.ImportCsv`）与可配判定阈值（`/settings`）；作者邮箱改为 GitHub noreply |
 | `3e1679c` | 2026-10-19 | 首页 KPI 与平台走势接入 `DashboardManager.GetSummary`，新增 `PlatformAccount` / `MetricDaily` |
 | `4100139` | 2026-10-18 | 补业务角色、新增登录页并挂上受保护路由 |
 | `81ba382` | 2026-10-18 00:22 | 产品文档适配移动端：取消固定侧栏、表格与甘特图横向滚动 |
@@ -223,6 +227,29 @@
 - `dotnet build` 0 错误、`tsc --noEmit` 0 错误。
 - 未做浏览器端验证：导入 Dialog 的实际渲染只由 `tsc` 保证，没跑过 CDP。
 
+### 2.11 业务角色权限落地（本轮）
+
+代码：
+
+- `SettingsManager.GetSignalThresholds` / `SaveSignalThresholds` → `[RequireRole(Roles.Admin)]`（原为 `[RequireAuthenticated]`，任何登录用户都能改阈值）。
+- `PlatformAccountManager.SaveAccount` / `DisableAccount`、`MetricManager.IngestManual` / `ImportCsv` → `[RequireRole(Roles.Admin, Roles.Operations)]`。
+- 读接口（`GetSummary`、`ListAccounts`、`ListRecentMetrics`）保持只要求登录：访客要能看总览与账号列表，只是看不到写入口。
+- `AttributeMethodAuthorizer`：403 的异常文案由 `Forbidden.` 改为「当前账号无权执行该操作（需要角色：admin / operations）。」，让界面能直接告诉用户找谁开通。
+- `ServiceInvokerEndpoints`：403 从「只有状态码」改为带 JSON 正文 `{ Success: false, Message }`；否则浏览器侧只能显示 `Forbidden`。
+- `AppConfiguration.AdminEmails` + `LocalAuthAccessor.EnsureBootstrapAdminAsync`：本地认证没有飞书用户组，命中名单的邮箱（逗号 / 分号分隔）在登录或注册时补 `admin` 并落库。**没有它，`/settings` 收紧后就没有任何账号进得去**；生产环境此项留空，角色走 `RoleMappingConfig`。
+- 前端 `src/utils/permissions.ts`：`canManageAccounts` / `canEditThresholds` / `readOnlyNotice`，取值与权限矩阵一致，权限判断只此一处。
+- `src/utils/errors.ts` + `ApiClient`：403 正文的中文原因透传到界面，只有 `Failed to fetch` 之类才回落到页面兜底文案（此前 catch 一律吞成「保存失败，后端接口不可用。」）。
+- 路由：`/settings` 移入 `<ProtectedRoute roles={[ADMIN_ROLE]}>`，非管理员落到 `/unauthorized`。
+- `ConnectionsView`：非管理员 / 运营不渲染新增账号、批量导入、录入日指标、单账号录入 / 编辑 / 停用，顶部显示只读说明；`ExampleView` 首页两个快捷入口按角色显隐。
+
+验证：
+
+- `dotnet build` 0 错误、`tsc --noEmit` 0 错误、`vitest run` 13 条通过（新增 5 条权限用例）。
+- 隔离实例（`AppConfiguration__AppName=MediaAI-RoleSmoke`，5130）+ `/tmp/test_roles.py` 17 项全通过：管理员（`AppConfiguration__AdminEmails` 命中）自动带 `admin`、可读写阈值、可建账号；访客 `['user']` 可读总览 / 账号列表 / 最近录入，但读阈值、写阈值、建账号、停用、录入、CSV 导入全部 403，且正文含「需要角色：admin」。
+- 运营角色（手改 `Users.json` 加 `operations`）：可建账号、可 CSV 导入，读阈值 403。
+- 界面级验证（`/tmp/ui_roles.py`，CDP + 无头 Chrome，15 项断言全通过）：管理员在 `/connections` 有 8 组「录入 / 编辑 / 停用」按钮，访客只有「刷新」；访客看到只读说明、首页无阈值与账号入口、直接访问 `/settings` 落到「暂无访问权限」；管理员 `/settings` 正常打开。
+- 未验证：多角色叠加（如 `admin + sales`）、飞书签发 token 的同样路径（无凭据）。
+
 ---
 
 ## 3. 遗留问题
@@ -230,12 +257,14 @@
 | # | 问题 | 影响 | 状态 |
 | --- | --- | --- | --- |
 | 1 | `/analysis/:viewId` 路由去留未定 | 产品文档只有 6 个页面，此路由无对应页面，代码仍指向占位视图 | **待用户决定** |
-| 2 | 业务角色已定义，但没有任何接口挂 `[RequireRole(...)]` | 权限矩阵尚未生效，越权访问仍可能通过。`/settings` 也只挂了 `[RequireAuthenticated]`，任何登录用户都能改阈值 | 待做（随接口落地） |
+| 2 | ~~业务角色已定义，但没有任何接口挂 `[RequireRole(...)]`~~ | 阈值与账号 / 指标写接口已按权限矩阵收口（见 2.11）；后续新 Manager 记得同步标注 | ✅ |
+| 2b | 本地认证下角色的唯一入口是 `AppConfiguration__AdminEmails` | 只能给 `admin`；`sales` / `planner` 等角色需手改 `Users.json`，等 `RoleMappingConfig` 落地 | 待做（随飞书同步） |
 | 3 | 飞书免登未接入 | `/auth/feishu/callback` 与 `FeishuManager` 不存在，登录页只支持账号密码 | 待做（P0） |
 | 4 | 首页 KPI、平台走势、爆款机会、限流风险已接接口；执行列表（商务 / 计划 / 待办）与管理层概览仍是前端常量 | 验收第 1 条对首页指标与信号区块已成立；下钻明细仍无 | 部分完成 |
 | 4b | 指标来源为手工录入 + CSV 导入，平台 API 同步未接 | 已能用表格批量灌数，但仍需人导出再上传；`Source = api` 尚无写入方 | 待做（M1-4） |
 | 5 | ~~`/` 未挂 `ProtectedRoute`~~ | 已完成 | ✅ |
 | 6 | 无任何自动化测试与 CI | 改动靠人工验证 | 未规划 |
+| 6b | `npm run lint` 此前跑不起来（`eslint.config.js` 引 `typescript-eslint` 但依赖里没有），本轮补了 `typescript-eslint@8.1.0` 后恢复 | 存量 24 个 error（多为 `no-explicit-any`、`vite.config.ts` 空 block），本轮改动文件 0 error | 存量待清 |
 | 7 | 推文文案只存在于对话中 | X / Facebook 两版成稿未落文件，若要发布需重新生成 | 未落地 |
 
 **待确认**：第 1 项需要一句答复——现在删除该路由，还是等 M3 首页接真实接口时并入管理面板一并处理。
@@ -253,7 +282,7 @@
 
 1. ~~**手工录入 / 接口同步入口**：`MetricManager.UpsertDaily` + `PlatformAccountManager` 增删改查 + 「平台连接」页~~ — 已完成手工模式（见 2.7），接口同步仍未做
 2. ~~**首页剩余区块接接口**：爆款机会、限流风险~~ — 已完成（见 2.8）；执行列表与合作单摘要仍未接，需要先有 `BusinessManager` / `PlanManager`
-2b. ~~**阈值可配**：把 `BuildSignals` 的四个常量挪到 `SignalThresholdConfig` 文档，管理面板可改，改完 `SignalPolicy` 自动跟着变~~ — 已完成（见 2.9）；后续可接 `[RequireRole("admin")]` 与操作审计
+2b. ~~**阈值可配**：把 `BuildSignals` 的四个常量挪到 `SignalThresholdConfig` 文档，管理面板可改，改完 `SignalPolicy` 自动跟着变~~ — 已完成（见 2.9）；`[RequireRole("admin")]` 已接（见 2.11），操作审计未做
 3. ~~**批量导入**：给运营一个 CSV 导入（账号、日期、播放、互动），复用 `MetricManager` 的校验~~ — 已完成（见 2.10，`Source = csv`）；后续可加导入历史与失败行导出
 4. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
 5. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`

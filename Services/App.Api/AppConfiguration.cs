@@ -15,4 +15,12 @@ public class AppConfiguration
     /// Never commit a real value; provide it through configuration (AppConfiguration__LocalJwtSigningKey).
     /// </summary>
     public string LocalJwtSigningKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 本地认证下的初始管理员邮箱（逗号或分号分隔）。
+    /// 本地 JSON 认证没有飞书用户组可同步，命中名单的账号在登录 / 注册时自动补上 admin 角色并落库，
+    /// 否则 /settings 这类只对管理员开放的页面没人能进。
+    /// 生产环境角色来自飞书用户组映射，这里留空。
+    /// </summary>
+    public string AdminEmails { get; set; } = string.Empty;
 }

@@ -47,6 +47,7 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 | --- | --- | --- |
 | 工作台首页（`/`） | 已完成（指标卡 + 机会/风险接接口） | 四个 KPI、平台走势、爆款机会、限流风险均由 `DashboardManager.GetSummary` 现场计算；执行列表（商务 / 计划 / 待办）仍是前端数据 |
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
+| 接口权限 | 已接入首批 | 阈值仅 `admin`，账号与指标写接口限 `admin` / `operations`；越权返回 403 + 中文原因，见[角色与权限](#角色与权限) |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
 | 平台连接页（`/connections`） | 已完成（手工 + CSV） | 账号增删改查、停用、手工录入日指标、CSV 批量导入、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
@@ -164,6 +165,7 @@ cd react-app && npm test
 | `SupabaseSecretKey` | 服务端管理 key（可绕过 RLS） | `<service-role-key>` |
 | `AppName` | 本地数据目录名 | `MediaAI` |
 | `LocalJwtSigningKey` | 仅开发环境：本地 JWT 签名密钥（至少 32 字符）。留空则自动生成并持久化 | `<generated-on-first-run>` |
+| `AdminEmails` | 仅开发环境：初始管理员邮箱，逗号 / 分号分隔。命中名单的账号在登录或注册时自动补 `admin` 角色并落库。生产角色来自飞书用户组，此项留空 | `admin@example.com` |
 
 `Services/App.Api/appsettings.json` 中只有 `default` 等占位串，可直接公开。
 
@@ -296,7 +298,17 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 
 角色不在本系统维护名单：以飞书用户组为准，入组即得权限、离组即失权，映射关系存 `RoleMappingConfig`。
 
-> 角色常量已在后端 `Services/App.Api/Utilities/Roles/Roles.cs` 与前端 `src/utils/roles.ts` 两处落地，改一处必须同时改另一处。当前尚无业务接口挂 `[RequireRole(...)]`，权限矩阵待接口落地后逐条接入。
+> 角色常量已在后端 `Services/App.Api/Utilities/Roles/Roles.cs` 与前端 `src/utils/roles.ts` 两处落地，改一处必须同时改另一处。
+
+已按权限矩阵落地的接口（后端 `[RequireRole(...)]` 拦截，前端同步隐藏入口）：
+
+| 接口 | 允许角色 | 越权结果 |
+| --- | --- | --- |
+| `SettingsManager.GetSignalThresholds` / `SaveSignalThresholds` | `admin` | 403 + 中文原因 |
+| `PlatformAccountManager.SaveAccount` / `DisableAccount` | `admin`、`operations` | 403 + 中文原因 |
+| `MetricManager.IngestManual` / `ImportCsv` | `admin`、`operations` | 403 + 中文原因 |
+
+读接口（`GetSummary`、`ListAccounts`、`ListRecentMetrics`）仍只要求登录，所以访客也能看总览与账号列表，但看不到任何写入口。`/settings` 路由本身对非管理员落到 `/unauthorized`。开发环境用 `AppConfiguration__AdminEmails` 指定谁能拿到 `admin`。
 
 ---
 
@@ -394,7 +406,7 @@ git status --ignored --short | grep -E "\.env|appsettings"
 1. **飞书免登**：登录页并列飞书入口，新增 `/auth/feishu/callback`，由 `FeishuManager.ExchangeCode` 换 `open_id` 并签发本系统 JWT；飞书凭据只走 `Feishu__*` 环境变量，token 不下发浏览器。（账号密码登录与 `ProtectedRoute` 已完成）
 2. **角色口径对齐**
    - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
-   - 业务接口按权限矩阵挂 `[RequireRole(...)]`。
+   - ~~业务接口按权限矩阵挂 `[RequireRole(...)]`~~ — 已接入设置页与账号/指标写接口，其余接口随落地补齐。
 3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 四个 KPI、平台走势、机会/风险已完成，待办、合作单摘要待补）
    - 机会/风险阈值已可配：`/settings` 改完保存即生效，规则文案与首页同源（`SignalPolicyText`）。
 4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。

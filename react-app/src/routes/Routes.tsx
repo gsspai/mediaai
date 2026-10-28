@@ -7,6 +7,7 @@ import ProtectedRoute from '@/routes/ProtectedRoute';
 import SettingsView from '@/views/SettingsView';
 import UnauthorizedView from '@/views/UnauthorizedView';
 import WorkspaceDetailPlaceholderView from '@/views/WorkspaceDetailPlaceholderView';
+import { ADMIN_ROLE } from '@/utils/roles';
 
 /**
  * 路由表：`/login` 与 `/unauthorized` 公开，其余页面统一挂在 ProtectedRoute 之下。
@@ -26,8 +27,12 @@ const AppRoutes = () => {
           <Route path="/plans/:planId" element={<WorkspaceDetailPlaceholderView />} />
           <Route path="/connections" element={<ConnectionsView />} />
           <Route path="/connections/:platform" element={<WorkspaceDetailPlaceholderView />} />
-          <Route path="/settings" element={<SettingsView />} />
           <Route path="/analysis/:viewId" element={<WorkspaceDetailPlaceholderView />} />
+        </Route>
+
+        {/* 判定阈值属于管理层面板，按权限矩阵只对管理员开放；其他角色落到 /unauthorized。 */}
+        <Route element={<ProtectedRoute roles={[ADMIN_ROLE]} />}>
+          <Route path="/settings" element={<SettingsView />} />
         </Route>
 
         <Route path="*" element={<NotFoundView />} />

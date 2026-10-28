@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using App.Api.Accessors;
 using App.Api.Utilities;
+using App.Api.Utilities.Roles;
 using App.ServiceInvoker.Attributes;
 using App.ServiceInvoker.Interfaces;
 using Contracts.Domain.Database;
@@ -53,7 +54,7 @@ namespace App.Api.Managers
         /// 单日手工录入。同一账号同一天重复提交按覆盖处理，不会产生重复行，
         /// 并把 RecordedBy 更新为本次录入人，保证「谁改的」可回溯。
         /// </summary>
-        [RequireAuthenticated]
+        [RequireRole(Roles.Admin, Roles.Operations)]
         public async Task<MetricIngestResultDto> IngestManual(IngestManualMetricsRequestDto request)
         {
             if (request == null || request.AccountId == Guid.Empty)
@@ -164,7 +165,7 @@ namespace App.Api.Managers
         /// 全部通过的行一次性批量写入，1000 行只产生一次落盘。
         /// 表头支持中英文（运营手写的往往是中文列名）。
         /// </summary>
-        [RequireAuthenticated]
+        [RequireRole(Roles.Admin, Roles.Operations)]
         public async Task<ImportMetricsCsvResultDto> ImportCsv(ImportMetricsCsvRequestDto request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Content))

@@ -1,5 +1,6 @@
 using App.Api.Accessors;
 using App.Api.Utilities;
+using App.Api.Utilities.Roles;
 using App.ServiceInvoker.Attributes;
 using App.ServiceInvoker.Interfaces;
 using Contracts.Domain.Database;
@@ -50,7 +51,10 @@ namespace App.Api.Managers
         /// 新增或编辑账号。校验失败返回 Success = false + Message，不抛异常，
         /// 前端可以把原因直接显示在表单下方。
         /// </summary>
-        [RequireAuthenticated]
+        /// <summary>
+        /// 「平台账号连接」按权限矩阵归管理员与运营；其他角色调用会被 403 拦在方法入口。
+        /// </summary>
+        [RequireRole(Roles.Admin, Roles.Operations)]
         public async Task<SaveAccountResultDto> SaveAccount(SaveAccountRequestDto request)
         {
             if (request == null)
@@ -156,7 +160,7 @@ namespace App.Api.Managers
         /// <summary>
         /// 停用账号：不做物理删除，历史日记录仍然保留，首页仍可回溯。
         /// </summary>
-        [RequireAuthenticated]
+        [RequireRole(Roles.Admin, Roles.Operations)]
         public async Task<OperationResultDto> DisableAccount(AccountIdRequestDto request)
         {
             if (request == null || request.AccountId == Guid.Empty)

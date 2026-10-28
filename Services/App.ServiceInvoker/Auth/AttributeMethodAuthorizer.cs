@@ -37,7 +37,8 @@ namespace App.ServiceInvoker.Auth
             var roles = RoleClaimsReader.GetRoles(user);
             if (!roleAttr.Roles.Any(r => roles.Contains(r, StringComparer.OrdinalIgnoreCase)))
             {
-                throw new ForbiddenAccessException("Forbidden.");
+                // 文案直接回传给前端展示：只写「Forbidden」时界面无法告诉用户该找谁开通。
+                throw new ForbiddenAccessException($"当前账号无权执行该操作（需要角色：{string.Join(" / ", roleAttr.Roles)}）。");
             }
         }
     }

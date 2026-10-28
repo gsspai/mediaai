@@ -12,6 +12,7 @@ import type { DashboardSignalDto, DashboardSummaryDto } from '@/api/AppDtos';
 import useAuthStore from '@/auth/AuthStore';
 import { formatCompactNumber } from '@/lib/format';
 import { getPlatformLabel } from '@/utils/platforms';
+import { canEditThresholds, canManageAccounts } from '@/utils/permissions';
 import {
   ADMIN_ROLE,
   ANALYST_ROLE,
@@ -169,6 +170,8 @@ const HomeView = () => {
   const roleKey = roles.join(',');
   const roleLabels = getRoleLabels(roles);
   const isManagement = hasRole(roles, ADMIN_ROLE);
+  const canEditAccountData = canManageAccounts(roles);
+  const canEditThreshold = canEditThresholds(roles);
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('business');
   const [isTabPinned, setIsTabPinned] = useState(false);
@@ -331,12 +334,16 @@ const HomeView = () => {
             数据来源：{summary.DataSource.Label}（{summary.RangeStart} 至 {summary.RangeEnd}）
           </p>
           <div className="flex flex-wrap items-center gap-4">
-            <Link to="/connections" className="font-medium text-foreground underline underline-offset-4">
-              管理账号 / 录入数据
-            </Link>
-            <Link to="/settings" className="font-medium text-foreground underline underline-offset-4">
-              调整判定阈值
-            </Link>
+            {canEditAccountData ? (
+              <Link to="/connections" className="font-medium text-foreground underline underline-offset-4">
+                管理账号 / 录入数据
+              </Link>
+            ) : null}
+            {canEditThreshold ? (
+              <Link to="/settings" className="font-medium text-foreground underline underline-offset-4">
+                调整判定阈值
+              </Link>
+            ) : null}
           </div>
         </div>
       ) : null}

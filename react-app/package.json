@@ -2,15 +2,15 @@
   "type": "module",
   "name": "mediaai",
   "version": "0.3.15",
-  "description": "\u65B0\u4F20\u5A92\u516C\u53F8AI\u8F6C\u578B",
+  "description": "新传媒公司AI转型",
   "author": {
     "name": "gss",
-    "email": "284755092@qq.com",
+    "email": "28855686+shuishui313@users.noreply.github.com",
     "url": "https://www.codebuddy.com"
   },
   "scripts": {
     "dev": "vite --mode development",
-    "build": "tsc -b \u0026\u0026 vite build --mode live",
+    "build": "tsc -b && vite build --mode live",
     "preview": "vite preview --mode live",
     "start": "npm run dev",
     "format": "prettier ./src --write",
@@ -61,6 +61,7 @@
     "react-color": "2.19.3",
     "ts-node": "10.9.2",
     "typescript": "5.6.2",
+    "typescript-eslint": "^8.1.0",
     "vite": "^5.4.20",
     "vite-tsconfig-paths": "5.0.1",
     "vitest": "2.0.5"
