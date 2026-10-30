@@ -166,6 +166,28 @@ export interface DashboardSummaryDto {
   Risks: DashboardSignalDto[];
   SignalPolicy: string;
   SignalPolicyTrace: string;
+  /** 执行列表三块与管理层概览，与指标区间无关，始终返回真实单据 */
+  Execution: DashboardExecutionDto;
+}
+
+/** 首页执行列表：每块最多 3 条，Total / OpenCount 是全量条数。 */
+export interface DashboardExecutionDto {
+  Deals: DealDto[];
+  Plans: ContentPlanDto[];
+  Todos: TodoDto[];
+  /** 仅 admin 返回，其他角色为空数组 */
+  Management: DashboardManagementDto[];
+  SourceLabel: string;
+  DealTotal: number;
+  PlanTotal: number;
+  TodoOpenCount: number;
+}
+
+export interface DashboardManagementDto {
+  Label: string;
+  Value: number;
+  Unit: string;
+  Trace: string;
 }
 
 /** 机会 / 风险区块的一行，Title 是账号展示名，Trace 说明触发依据。 */
@@ -326,4 +348,197 @@ export interface SaveSignalThresholdResultDto {
   Success: boolean;
   Message: string;
   Thresholds: SignalThresholdDto;
+}
+
+// ---------- 商务单 · DealManager ----------
+
+export interface DealDto {
+  Id: string;
+  ClientName: string;
+  Title: string;
+  Contact: string;
+  Amount: number;
+  /** 后端格式化好的金额，例如「¥48,000」；未报价时为「未报价」 */
+  AmountDisplay: string;
+  Currency: string;
+  /** lead / quoting / pricing-review / confirmed / delivering / settled / lost */
+  Stage: string;
+  StageLabel: string;
+  Tone: string;
+  OwnerName: string;
+  OwnerAuthId: string;
+  NextStep: string;
+  /** yyyy-MM-dd，未确定时为 null */
+  ExpectedCloseAt: string | null;
+  Notes: string;
+  CreatedBy: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+  /** 开发态示例数据，界面会打「示例」标记 */
+  IsSample: boolean;
+  /** 可推进到的下一阶段，已结算 / 已丢失时为 null */
+  NextStage: string | null;
+}
+
+export interface DealListDto {
+  Items: DealDto[];
+  Total: number;
+}
+
+export interface DealListRequestDto {
+  Stage?: string;
+  Keyword?: string;
+  Take?: number;
+}
+
+export interface DealByIdRequestDto {
+  DealId: string;
+}
+
+export interface SaveDealRequestDto {
+  Id: string | null;
+  ClientName: string;
+  Title: string;
+  Contact: string;
+  Amount: number;
+  Currency: string;
+  Stage?: string;
+  OwnerName: string;
+  NextStep?: string | null;
+  ExpectedCloseAt?: string | null;
+  Notes: string;
+}
+
+export interface SaveDealResultDto {
+  Success: boolean;
+  Message: string;
+  Deal: DealDto | null;
+}
+
+export interface UpdateDealStageRequestDto {
+  DealId: string;
+  Stage: string;
+  NextStep?: string | null;
+}
+
+export interface UpdateDealStageResultDto {
+  Success: boolean;
+  Message: string;
+  Deal: DealDto | null;
+}
+
+// ---------- 内容计划 · ContentPlanManager ----------
+
+export interface ContentPlanDto {
+  Id: string;
+  Title: string;
+  Platforms: string[];
+  /** yyyy-MM-dd，未排期时为 null */
+  PlannedAt: string | null;
+  /** 展示用周期文案，例如「今日」「明日」 */
+  CycleDisplay: string;
+  /** draft / scoring / scheduled / published / archived */
+  Status: string;
+  StatusLabel: string;
+  Tone: string;
+  Direction: string;
+  Score: number | null;
+  /** 已格式化分数，例如「8.7 / 10」；未评分时为「未评分」 */
+  ScoreDisplay: string;
+  AssigneeName: string;
+  DealId: string | null;
+  DealTitle: string;
+  Link: string;
+  CreatedBy: string;
+  CreatedAt: string;
+  UpdatedAt: string;
+  IsSample: boolean;
+  NextStatus: string | null;
+}
+
+export interface ContentPlanListDto {
+  Items: ContentPlanDto[];
+  Total: number;
+}
+
+export interface PlanListRequestDto {
+  Status?: string;
+  Keyword?: string;
+  Take?: number;
+}
+
+export interface PlanByIdRequestDto {
+  PlanId: string;
+}
+
+export interface SavePlanRequestDto {
+  Id: string | null;
+  Title: string;
+  Platforms: string[];
+  PlannedAt?: string | null;
+  Direction: string;
+  Score?: number | null;
+  AssigneeName: string;
+  DealId?: string | null;
+  Link: string;
+}
+
+export interface SavePlanResultDto {
+  Success: boolean;
+  Message: string;
+  Plan: ContentPlanDto | null;
+}
+
+export interface UpdatePlanStatusRequestDto {
+  PlanId: string;
+  Status: string;
+}
+
+export interface UpdatePlanStatusResultDto {
+  Success: boolean;
+  Message: string;
+  Plan: ContentPlanDto | null;
+}
+
+// ---------- 跨角色待办 · TodoManager ----------
+
+export interface TodoDto {
+  Id: string;
+  Key: string;
+  /** true 表示由商务单 / 内容计划推导，不能勾选，条件修好后自动消失 */
+  Auto: boolean;
+  Title: string;
+  OwnerRole: string;
+  OwnerRoleLabel: string;
+  Urgency: string;
+  Tone: string;
+  Href: string;
+  DueDate: string | null;
+  Status: string;
+  CreatedBy: string;
+  CreatedAt: string;
+  DoneAt: string | null;
+  DoneBy: string;
+}
+
+export interface TodoListDto {
+  Items: TodoDto[];
+  OpenCount: number;
+}
+
+export interface TodoListRequestDto {
+  IncludeDone: boolean;
+  Take?: number;
+}
+
+export interface CompleteTodoRequestDto {
+  TodoId: string;
+}
+
+export interface SaveTodoRequestDto {
+  Title: string;
+  OwnerRole: string;
+  Priority: string;
+  DueDate?: string | null;
+  Href: string;
 }

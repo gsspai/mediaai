@@ -1,13 +1,13 @@
 # HANDOFF
 
-> 交接文档 · 更新于 2026-10-27
-> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 工作区改动未提交（本轮权限落地）
+> 交接文档 · 更新于 2026-10-28
+> 仓库：`gsspai/mediaai`（public） · 分支 `main` · 工作区改动未提交（本轮执行列表接接口）
 
 ---
 
 ## 1. 当前进度
 
-最近几步：产品文档静态站点（`81ba382`）、认证闭环（`4100139`）、首页指标接真实接口（`3e1679c`）、账号与手工录入闭环（`65ea081`）、爆款机会 / 限流风险接真实计算、阈值可配 + CSV 批量导入（`8d43505`）、**业务角色权限落地（本轮，未提交）**。
+最近几步：产品文档静态站点（`81ba382`）、认证闭环（`4100139`）、首页指标接真实接口（`3e1679c`）、账号与手工录入闭环（`65ea081`）、爆款机会 / 限流风险接真实计算、阈值可配 + CSV 批量导入（`8d43505`）、业务角色权限落地（`58be3ba`）、**执行列表三块接真实接口 + 商务单 / 内容计划详情页（本轮，未提交）**。
 
 已到达的状态：
 
@@ -19,8 +19,9 @@
 - 首页「爆款机会」「限流 / 掉速风险」由 `DashboardManager` 按日记录实时算，每条带触发值与依据，面板下方写明判定规则。
 
 - 权限矩阵已生效：阈值仅管理员可读写，账号与指标写接口限管理员 / 运营，访客只读；越权返回 403 + 中文原因，前端同步隐藏入口。
+- 首页执行列表三块（商务单 / 内容计划 / 跨角色待办）与管理层概览来自 `Deal` / `ContentPlan` / `TodoItem` 三个文档，`/business`、`/business/:dealId`、`/plans`、`/plans/:planId` 四个页面均可用（新建、编辑、阶段推进/复核）。待办里的「自动」条目由单据状态推导，不落库。
 
-**未开始**：飞书免登、`RoleMappingConfig` / 用户组同步、平台 API 同步。执行列表（商务 / 计划 / 待办）与管理层概览仍是前端演示数据。
+**未开始**：飞书免登、`RoleMappingConfig` / 用户组同步、平台 API 同步、飞书审批回写报价阶段、操作审计。`/connections/:platform` 仍是占位。
 
 ---
 
@@ -30,7 +31,8 @@
 
 | 版本 | 时间 | 内容 |
 | --- | --- | --- |
-| （未提交） | 2026-10-27 | 业务角色权限落地：`[RequireRole]`、403 中文原因、管理员引导、前端入口按角色显隐 |
+| （未提交） | 2026-10-28 | 执行列表接真实接口：`Deal` / `ContentPlan` / `TodoItem` + 三个 Manager + 四个页面；删除 `/analysis/:viewId` |
+| `58be3ba` | 2026-10-28 | 业务角色权限落地：`[RequireRole]`、403 中文原因、管理员引导、前端入口按角色显隐 |
 | `8d43505` | 2026-10-27 | CSV 批量导入（`MetricManager.ImportCsv`）与可配判定阈值（`/settings`）；作者邮箱改为 GitHub noreply |
 | `3e1679c` | 2026-10-19 | 首页 KPI 与平台走势接入 `DashboardManager.GetSummary`，新增 `PlatformAccount` / `MetricDaily` |
 | `4100139` | 2026-10-18 | 补业务角色、新增登录页并挂上受保护路由 |
@@ -250,24 +252,49 @@
 - 界面级验证（`/tmp/ui_roles.py`，CDP + 无头 Chrome，15 项断言全通过）：管理员在 `/connections` 有 8 组「录入 / 编辑 / 停用」按钮，访客只有「刷新」；访客看到只读说明、首页无阈值与账号入口、直接访问 `/settings` 落到「暂无访问权限」；管理员 `/settings` 正常打开。
 - 未验证：多角色叠加（如 `admin + sales`）、飞书签发 token 的同样路径（无凭据）。
 
+### 2.12 执行列表接真实接口（本轮）
+
+代码：
+
+- 数据文档：`Deal`（客户、事项、金额、阶段、负责人、下一步、预计签约、备注）、`ContentPlan`（标题、平台、排期、状态、方向、机会分、责任人、关联商务单、成品链接）、`TodoItem`（人工待办）。字段与《实施计划 · 3.5 / 3.6》对齐。
+- `DealManager`：`ListDeals`（阶段 + 关键词筛选）/ `GetDeal` / `SaveDeal`（admin、sales）/ `UpdateDealStage`（admin、sales、finance）。阶段只允许前进一步或进入 `lost`，跳级返回「只能推进到下一阶段「quoting」…」；财务单独持有时只能「待报价审核 → 已确认 / 退回报价中」。
+- `ContentPlanManager`：`ListPlans` / `GetPlan` / `SavePlan` / `UpdatePlanStatus`（admin、planner、operations、editor）；状态只能顺次推进或归档，机会分 0–10，平台标识去重并校验。
+- `TodoManager`：`ListTodos` / `SaveTodo`（admin、operations）/ `CompleteTodo`（所有业务角色）。
+- `Utilities/TodoBuilder`：自动待办从单据推导，不落库——待报价审核、报价超 3 天未复核、计划缺方向、计划过排期未发布；勾选自动待办返回「自动待办由商务单阶段或内容计划推导，不能勾选」。
+- `Utilities/ExecutionMapper` / `ExecutionText`：阶段文案、色板、金额与分数格式化、周期文案的唯一来源，首页 / 列表 / 详情三处共用，前端不再自己拼。
+- `DashboardSummaryDto.Execution`：`Deals` / `Plans` / `Todos`（各取前 3）、`Management`（仅 admin）、`SourceLabel`、`DealTotal` / `PlanTotal` / `TodoOpenCount`。**执行列表与指标区间无关**，无日记录时照样返回。
+- `Utilities/ExecutionSeeder`：开发态示例数据（4 单 / 4 计划 / 2 待办，`CreatedBy = seed:development`），界面打「示例」标记。
+- 前端：首页三块改成真实数据（含空态与加载失败文案），管理层概览换 `Execution.Management`；新增 `/business`、`/plans` 列表页（筛选、新建 / 编辑对话框）与 `/business/:dealId`、`/plans/:planId` 详情页（`StatusTimeline` 阶段条、推进 / 复核 / 归档、关联对象互跳）；`utils/execution.ts` 维护筛选用的阶段选项、角色名与日期提示。
+- 删除 `/analysis/:viewId` 路由与占位配置（遗留第 1 条），现在落到 404。
+
+验证：
+
+- `dotnet build` 0 错误、`tsc --noEmit` 0 错误、`npm run build` 成功、`vitest run` 17 条通过（新增 4 条商务 / 计划 / 待办权限用例）、本轮文件 lint 0 错误。
+- 隔离实例（`AppConfiguration__AppName=MediaAI-Exec`，5131/5132）+ `/tmp/test_exec.py` 43 项：种子数据 4 单 4 计划 2 待办；首页执行列表按紧急度排序（待报价审核在最前）、自动待办出现且文案正确、管理层三项带说明、来源标出「含开发态示例数据」；筛选 / 详情 / 新建 / 各类校验（空客户名、负金额、日期格式、机会分越界、平台不支持）全部符合预期；阶段跳级被拒、正常推进、归档生效；访客读得到列表但写操作与阶段推进全部 403。
+- `/tmp/test_finance.py` 8 项：财务看不到管理层概览、不能新建商务单（403）、复核通过（待审核 → 已确认）、退回报价（待审核 → 报价中）、跳到其它阶段被拒、勾选自动待办被拒。
+- 界面级 `/tmp/ui_exec.py`（CDP + 无头 Chrome）22 项：首页三个 Tab 显示真实单据与「自动」标记、管理层概览、商务/计划列表与详情、访客看不到写入口与推进按钮、`/analysis/whatever` 落到 404；额外用对话框实际新建了一条商务单（填写 → 保存 → 列表出现「界面验收合作」）。
+- 未验证：`/connections/:platform` 仍是占位；飞书审批回调推进阶段未接，阶段推进目前靠人点。
+
 ---
 
 ## 3. 遗留问题
 
 | # | 问题 | 影响 | 状态 |
 | --- | --- | --- | --- |
-| 1 | `/analysis/:viewId` 路由去留未定 | 产品文档只有 6 个页面，此路由无对应页面，代码仍指向占位视图 | **待用户决定** |
+| 1 | ~~`/analysis/:viewId` 路由去留~~ | 已删除路由与占位配置，访问落到 404（见 2.12） | ✅ |
 | 2 | ~~业务角色已定义，但没有任何接口挂 `[RequireRole(...)]`~~ | 阈值与账号 / 指标写接口已按权限矩阵收口（见 2.11）；后续新 Manager 记得同步标注 | ✅ |
 | 2b | 本地认证下角色的唯一入口是 `AppConfiguration__AdminEmails` | 只能给 `admin`；`sales` / `planner` 等角色需手改 `Users.json`，等 `RoleMappingConfig` 落地 | 待做（随飞书同步） |
 | 3 | 飞书免登未接入 | `/auth/feishu/callback` 与 `FeishuManager` 不存在，登录页只支持账号密码 | 待做（P0） |
-| 4 | 首页 KPI、平台走势、爆款机会、限流风险已接接口；执行列表（商务 / 计划 / 待办）与管理层概览仍是前端常量 | 验收第 1 条对首页指标与信号区块已成立；下钻明细仍无 | 部分完成 |
-| 4b | 指标来源为手工录入 + CSV 导入，平台 API 同步未接 | 已能用表格批量灌数，但仍需人导出再上传；`Source = api` 尚无写入方 | 待做（M1-4） |
+| 4 | ~~首页执行列表与管理层概览仍是前端常量~~ | 已全部接接口，首页不再有 mock 常量（见 2.12） | ✅ |
+| 4b | 指标来源为手工录入 + CSV 导入，平台 API 同步未接 | 已能用表格灌数，但仍需人导出再上传；`Source = api` 尚无写入方 | 待做（M1-4） |
+| 4c | 商务单阶段推进靠人点，飞书报价审批未接 | 报价复核有记录但没有审批留痕；`DealManager.UpdateDealStage` 已留好入口给回调 | 待做（M2-1） |
+| 4d | 内容计划与待办没有删除 / 批量导入 | 录错了只能改状态（归档 / 完成），不能物理删除 | 待定 |
 | 5 | ~~`/` 未挂 `ProtectedRoute`~~ | 已完成 | ✅ |
 | 6 | 无任何自动化测试与 CI | 改动靠人工验证 | 未规划 |
 | 6b | `npm run lint` 此前跑不起来（`eslint.config.js` 引 `typescript-eslint` 但依赖里没有），本轮补了 `typescript-eslint@8.1.0` 后恢复 | 存量 24 个 error（多为 `no-explicit-any`、`vite.config.ts` 空 block），本轮改动文件 0 error | 存量待清 |
 | 7 | 推文文案只存在于对话中 | X / Facebook 两版成稿未落文件，若要发布需重新生成 | 未落地 |
 
-**待确认**：第 1 项需要一句答复——现在删除该路由，还是等 M3 首页接真实接口时并入管理面板一并处理。
+**待确认**：无阻塞项。下一批优先级见第 4 节。
 
 ---
 
@@ -281,12 +308,14 @@
 接下来，建议按以下顺序：
 
 1. ~~**手工录入 / 接口同步入口**：`MetricManager.UpsertDaily` + `PlatformAccountManager` 增删改查 + 「平台连接」页~~ — 已完成手工模式（见 2.7），接口同步仍未做
-2. ~~**首页剩余区块接接口**：爆款机会、限流风险~~ — 已完成（见 2.8）；执行列表与合作单摘要仍未接，需要先有 `BusinessManager` / `PlanManager`
+2. ~~**首页剩余区块接接口**：爆款机会、限流风险~~ — 已完成（见 2.8）
 2b. ~~**阈值可配**：把 `BuildSignals` 的四个常量挪到 `SignalThresholdConfig` 文档，管理面板可改，改完 `SignalPolicy` 自动跟着变~~ — 已完成（见 2.9）；`[RequireRole("admin")]` 已接（见 2.11），操作审计未做
 3. ~~**批量导入**：给运营一个 CSV 导入（账号、日期、播放、互动），复用 `MetricManager` 的校验~~ — 已完成（见 2.10，`Source = csv`）；后续可加导入历史与失败行导出
-4. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
-5. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
-6. **`/analysis/:viewId` 去留**（一行决定，可随时处理）
+3b. ~~**执行列表接接口**：`DealManager` / `ContentPlanManager` / `TodoManager` + 商务单与内容计划页面~~ — 已完成（见 2.12）；删除 / 导入、飞书审批推进未做
+4. **操作审计**：`AuditLog` 记录阈值、账号、指标、商务单阶段变更（谁、何时、前后值），设置页 / 详情页可查
+5. **飞书免登**：`/auth/feishu/callback` + 登录页飞书入口，与账号登录共用同一签发出口
+6. **`RoleMappingConfig`**（飞书用户组 → 角色，存库热改）+ `SyncDirectory` 定时同步，离职置 `Disabled`
+7. **`/connections/:platform`**：账号授权状态、同步失败重试、平台限额（当前仍是占位）
 
 产品文档给出的分期是 M0–M4、共 36 人日（M0 7.5 / M1 9 / M2 11.5 / M3 8），为估算值，大概率会超。
 
@@ -305,6 +334,9 @@
 - **ServiceInvoker 的方法返回值必须是 DTO 类型**：返回 `List<T>` 会被 `ServiceMethodInvoker` 判为非法返回值并抛异常。列表统一包 `{ Items: [...] }`。
 - Manager 里做参数校验时不要抛异常——异常会变成 500 Problem 带堆栈，前端拿不到中文原因；改用 `Success = false` 的 Result DTO。
 - **新增 Manager 必须在 `Program.cs` 的 `GetScopedServices` 里 `AddScoped` 注册**。反射只负责发现方法，实例仍从 DI 取；漏注册时 `/api/invoke` 直接返回 500，且控制台**没有任何堆栈**，很容易误判成业务逻辑问题。
+- **Manager 里不要写 public 的辅助方法**（例如「取首页前 3 条」）。反射会把 public 方法一并当成可调用接口，返回 `List<T>` 的直接被约定检查拒绝；聚合逻辑放在 `DashboardManager` 内部或 `Utilities` 里。
+- **阶段 / 状态文案只在后端维护一份**（`Utilities/ExecutionText.cs` 的 `DealStageText` / `PlanStatusText` / `RoleText`），DTO 直接下发 Label 与 Tone；前端 `utils/execution.ts` 里的同名 map 只用于筛选下拉与按钮文案。
+- 删掉 `Deal.json` / `ContentPlan.json` / `TodoItem.json` 会重置商务单、内容计划与人工待办（`ExecutionSeeder` 只在 Development 且没有 Deal 时写示例数据）。
 
 ### 5.2 本地环境
 

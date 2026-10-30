@@ -103,6 +103,7 @@ namespace App.Api
                 {
                     using var seedScope = app.Services.CreateScope();
                     seedScope.ServiceProvider.GetRequiredService<DashboardSeeder>().SeedAsync().GetAwaiter().GetResult();
+                    seedScope.ServiceProvider.GetRequiredService<ExecutionSeeder>().SeedAsync().GetAwaiter().GetResult();
                 }
                 catch (Exception ex)
                 {
@@ -201,7 +202,11 @@ namespace App.Api
             services.AddScoped<PlatformAccountManager>();
             services.AddScoped<MetricManager>();
             services.AddScoped<SettingsManager>();
+            services.AddScoped<DealManager>();
+            services.AddScoped<ContentPlanManager>();
+            services.AddScoped<TodoManager>();
             services.AddScoped<DashboardSeeder>();
+            services.AddScoped<ExecutionSeeder>();
             services.AddScoped<AuthenticatorEngine>();
             services.AddScoped<UserContextService>();
 

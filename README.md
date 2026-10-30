@@ -45,16 +45,17 @@ MediaAI 面向个人自媒体矩阵的日常运营：把多个平台账号的播
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 工作台首页（`/`） | 已完成（指标卡 + 机会/风险接接口） | 四个 KPI、平台走势、爆款机会、限流风险均由 `DashboardManager.GetSummary` 现场计算；执行列表（商务 / 计划 / 待办）仍是前端数据 |
+| 工作台首页（`/`） | 已完成（全部区块接接口） | 四个 KPI、平台走势、爆款机会、限流风险、执行列表三块（商务 / 计划 / 待办）与管理层概览均由 `DashboardManager.GetSummary` 现场返回 |
 | 角色化视图 | 已完成（前端） | 按角色决定默认执行列表，`admin` 额外展示管理层概览 |
 | 接口权限 | 已接入首批 | 阈值仅 `admin`，账号与指标写接口限 `admin` / `operations`；越权返回 403 + 中文原因，见[角色与权限](#角色与权限) |
 | 统一设计系统 | 已完成 | `PageShell` / `Panel` / `SectionHeader` / `StatusPill` / `TrendChart` / `SegmentedTabs` |
 | 产品文档 | 已发布 | [gsspai.github.io/mediaai](https://gsspai.github.io/mediaai/)，含定位、角色、指标口径与验收标准 |
 | 平台连接页（`/connections`） | 已完成（手工 + CSV） | 账号增删改查、停用、手工录入日指标、CSV 批量导入、最近录入明细；`/connections/:platform` 仍是占位，OAuth 授权未接 |
-| 详情页 | 部分 | `/business`、`/plans/:planId`、`/analysis/:viewId` 指向占位视图；`/settings` 已实现阈值配置 |
+| 商务与计划页 | 已完成（无审批流） | `/business`、`/business/:dealId`、`/plans`、`/plans/:planId` 均为真实数据；报价审批仍靠人工推进，未接飞书审批 |
+| 详情页 | 部分 | `/connections/:platform` 仍是占位；`/settings` 已实现阈值配置；`/analysis/:viewId` 已移除 |
 | 认证接口 | 骨架可用 | `AuthManager` 提供登录、注册、改密、会话等 8 个方法；飞书免登未接入 |
-| 看板接口 | 部分可用 | `DashboardManager.GetSummary`（近 N 天 KPI、平台走势、机会 / 风险信号、数据来源）；`PlatformAccountManager`、`MetricManager` 提供账号、手工录入与 CSV 导入；商务 / 计划 / 分析尚无 Manager |
-| 数据模型 | 已建立 | `PlatformAccount`（平台账号）、`MetricDaily`（日指标快照，含 `Source` 与 `RecordedBy`） |
+| 看板接口 | 可用 | `DashboardManager.GetSummary`（KPI、平台走势、机会 / 风险信号、执行列表三块、管理层概览、数据来源）；`PlatformAccountManager`、`MetricManager`、`DealManager`、`ContentPlanManager`、`TodoManager` 均已落地；分析类 Manager 未建 |
+| 数据模型 | 已建立 | `PlatformAccount`、`MetricDaily`（含 `Source` / `RecordedBy`）、`Deal`（商务单）、`ContentPlan`（内容计划）、`TodoItem`（人工待办） |
 | 登录 | 可用 | `/login` 账号密码登录，成功后回到来源路径；飞书免登未接入 |
 | 暗色模式 | 部分 | Token 已就绪，但页面尚无主题切换入口 |
 
@@ -214,6 +215,9 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 | --- | --- | --- |
 | `PlatformAccount` | 平台账号 | `Platform`、`Handle`、`Status`（`connected` / `manual` / `paused` / `error`）、`FollowerCount`、`OwnerId` |
 | `MetricDaily` | 每个账号每天的指标快照 | `AccountId`、`Platform`、`StatDate`、`Views` / `Likes` / `Comments` / `Shares`、`NewFollowers`、`Source`、`RecordedBy`、`RecordedAt` |
+| `Deal` | 商务合作单 | `ClientName`、`Title`、`Amount`、`Stage`、`OwnerName`、`OwnerAuthId`、`NextStep`、`ExpectedCloseAt`、`Notes`、`CreatedBy` |
+| `ContentPlan` | 内容计划 | `Title`、`Platforms`、`PlannedAt`、`Status`、`Direction`、`Score`、`AssigneeName`、`DealId`、`Link` |
+| `TodoItem` | 人工待办 | `Title`、`OwnerRole`、`Priority`、`DueDate`、`Href`、`Status`、`DoneAt`、`DoneBy` |
 
 - `MetricDaily.Source` 取 `api`（平台接口同步）/ `manual`（人工录入）/ `csv`（CSV 批量导入）/ `seed`（开发态种子），返回体里的 `DataSource` 会把四者计数摊开，界面直接显示「开发态示例数据 · 5 个账号 / 35 条日记录」「CSV 导入 12 条」这类文案。**新增数据入口时必须写入 `Source` 与 `RecordedBy`，否则数字无法回溯。**
 - 环比口径：把一个区间对半切成前段与后段，用**日均播放**比较（`DailyChangeRate`），而不是两段总量——7 天区间前 3 天后 4 天，用总量比会系统性低估后段。
@@ -259,6 +263,37 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 - `views` 留空不会被当成 0：空值意味着「这行可能漏填」，宁可报错也不写脏数据。
 - 写库走 `IDatabaseAccessor.UpsertDocuments`（单 session / 单次 `SaveAll`），避免逐条写导致本地 JSON 实现反复全量重写；1000 行实测约 20–120 ms。
 - 导入后的首页「数据来源」会显示 `CSV 导入 n 条`（`DashboardDataSourceDto.CsvCount`），与手工录入分开计数。
+
+### 执行列表：商务单 / 内容计划 / 待办
+
+首页「执行列表」三块与管理层概览由 `DashboardManager.GetSummary().Execution` 返回，**与指标区间无关**：即使区间内没有任何日记录，商务单和待办照样是真实单据。每块最多 3 条，`DealTotal` / `PlanTotal` / `TodoOpenCount` 给的是全量条数。
+
+| 方法 | 作用 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| `DealManager.ListDeals` / `GetDeal` | 列表（按阶段、关键词筛选）/ 详情 | 登录 | 已结算与已丢失不进「推进中」列表 |
+| `DealManager.SaveDeal` | 新建 / 编辑 | `admin`、`sales` | 客户名必填；报价不能为负；日期 `yyyy-MM-dd` |
+| `DealManager.UpdateDealStage` | 推进阶段 | `admin`、`sales`、`finance` | 财务单独持有时只能「待报价审核 → 已确认 / 退回报价中」 |
+| `ContentPlanManager.ListPlans` / `GetPlan` | 列表 / 详情 | 登录 | 关联商务单的标题由后端补齐 |
+| `ContentPlanManager.SavePlan` | 新建 / 编辑 | `admin`、`planner`、`operations`、`editor` | 机会分 0–10；平台标识去重并校验 |
+| `ContentPlanManager.UpdatePlanStatus` | 推进状态 | 同上 | 只能顺次推进一格，或任意状态归档 |
+| `TodoManager.ListTodos` | 待办列表 | 登录 | 自动待办 + 人工待办合并返回 |
+| `TodoManager.SaveTodo` | 新建人工待办 | `admin`、`operations` | 负责角色必须是业务角色 |
+| `TodoManager.CompleteTodo` | 勾选完成 | 所有业务角色 | 自动待办不能勾选，需回去改商务单 / 内容计划 |
+
+商务单阶段：`lead → quoting → pricing-review → confirmed → delivering → settled`，`lost` 可从任意阶段进入；**只允许前进一步**，跳级会被拒绝并说明只能到哪一阶段。
+
+内容计划状态：`draft → scoring → scheduled → published`，`archived` 可从任意状态进入。
+
+自动待办（不落库，条件修好后自动消失）：
+
+| 触发条件 | 文案 | 负责角色 |
+| --- | --- | --- |
+| 有商务单处于 `pricing-review` | N 条商务单等待财务复核报价 | 财务 |
+| 有商务单处于 `quoting` 且超过 3 天未更新 | N 条商务单报价超过 3 天未提交复核 | 商务 |
+| 有内容计划缺 `Direction` 且未发布 / 未归档 | N 条内容计划缺少方向说明 | 策划 |
+| 有内容计划 `scheduled` 且排期日已过 | N 条内容计划已过排期仍未发布 | 运营 |
+
+开发态种子数据由 `Utilities/ExecutionSeeder.cs` 写入（4 条商务单 / 4 条内容计划 / 2 条人工待办，`CreatedBy = seed:development`），界面打「示例」标记，`Execution.SourceLabel` 会写明「含开发态示例数据」。重置：删掉本地数据目录下的 `Deal.json`、`ContentPlan.json`、`TodoItem.json`。
 
 ### 机会与风险判定规则
 
@@ -320,14 +355,13 @@ POST /api/stream   → NDJSON 流式返回（方法返回 IAsyncEnumerable<T>）
 | --- | --- | --- |
 | `/` | 工作台首页（Dashboard） | 已挂 `ProtectedRoute` |
 | `/login` | 登录 | 已实现（账号密码）；飞书免登待接入 |
-| `/business` | 商务合作列表 | 占位 |
-| `/business/:dealId` | 合作单详情 | 占位 |
-| `/plans` | 内容计划列表 | 未建立（仅有详情占位） |
-| `/plans/:planId` | 内容计划详情 | 占位 |
+| `/business` | 商务合作列表 | 已实现（筛选、新建 / 编辑、阶段推进） |
+| `/business/:dealId` | 合作单详情 | 已实现（阶段时间线、复核 / 推进、关联内容计划） |
+| `/plans` | 内容计划列表 | 已实现（筛选、新建 / 编辑） |
+| `/plans/:planId` | 内容计划详情 | 已实现（状态时间线、推进 / 归档、关联商务单） |
 | `/connections` | 平台连接列表 | 已实现（账号管理 + 手工录入 + CSV 导入） |
 | `/connections/:platform` | 平台连接详情 | 占位 |
 | `/settings` | 设置（阈值、默认视图、通知渠道） | 已实现阈值配置；默认视图、通知渠道未做 |
-| `/analysis/:viewId` | 数据分析视图 | 占位；产品文档未列此页，待并入首页管理面板后下线 |
 | `/unauthorized` | 无权限 | 已统一文案与样式 |
 | `*` | 404 | 已统一文案与样式 |
 
@@ -407,9 +441,10 @@ git status --ignored --short | grep -E "\.env|appsettings"
 2. **角色口径对齐**
    - 新增 `RoleMappingConfig`（飞书用户组 → 角色）与 `SyncDirectory` 定时同步，离职自动置 `Disabled`；
    - ~~业务接口按权限矩阵挂 `[RequireRole(...)]`~~ — 已接入设置页与账号/指标写接口，其余接口随落地补齐。
-3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 四个 KPI、平台走势、机会/风险已完成，待办、合作单摘要待补）
+3. **后端数据骨架**：新增 `DashboardManager` + DTO（平台走势、KPI、机会/风险、待办、合作单摘要），工作台改为通过 `ApiClient` 拉取并删除 mock 常量。（`GetSummary` 已覆盖全部区块，首页不再有 mock 常量）
    - 机会/风险阈值已可配：`/settings` 改完保存即生效，规则文案与首页同源（`SignalPolicyText`）。
-4. **详情页落地**：先做 4 类详情页的骨架（面包屑、返回、标题区、占位区块），替换现有 `WorkspaceDetailPlaceholderView`。
+   - ~~执行列表（商务 / 计划 / 待办）与管理层概览~~ — 已接 `DealManager` / `ContentPlanManager` / `TodoManager`（见「执行列表」一节）。
+4. **详情页落地**：`/business/:dealId`、`/plans/:planId` 已实现；剩余 `/connections/:platform`（授权状态、同步失败重试）。
 
 ### P1 — 让页面「可用、可信」
 

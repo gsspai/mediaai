@@ -1,5 +1,6 @@
 using App.Api.Accessors;
 using App.Api.Utilities;
+using App.Api.Utilities.Roles;
 using App.ServiceInvoker.Attributes;
 using App.ServiceInvoker.Interfaces;
 using Contracts.Domain.Database;
@@ -24,11 +25,18 @@ namespace App.Api.Managers
         // 文案由 SignalPolicyText 按同一份配置生成，保证界面写的和实际算的一致。
         private const int MaxSignals = 3;
 
-        private readonly IDatabaseAccessor _databaseAccessor;
+        /// <summary>
+        /// 执行列表每块最多显示几条。与机会 / 风险一样，这是纯展示常量，不是判定阈值。
+        /// </summary>
+        private const int MaxExecutionRows = 3;
 
-        public DashboardManager(IDatabaseAccessor databaseAccessor)
+        private readonly IDatabaseAccessor _databaseAccessor;
+        private readonly UserContextService _userContextService;
+
+        public DashboardManager(IDatabaseAccessor databaseAccessor, UserContextService userContextService)
         {
             _databaseAccessor = databaseAccessor;
+            _userContextService = userContextService;
         }
 
         /// <summary>
@@ -56,7 +64,9 @@ namespace App.Api.Managers
                 HasData = metrics.Count > 0,
                 DataSource = BuildDataSource(metrics, accounts),
                 SignalPolicy = SignalPolicyText.Describe(days, thresholds),
-                SignalPolicyTrace = SignalThresholdStore.DescribeSource(thresholds)
+                SignalPolicyTrace = SignalThresholdStore.DescribeSource(thresholds),
+                // 执行列表与指标区间无关：即使区间内没有日记录，商务单与待办照样是真实单据。
+                Execution = await BuildExecutionAsync()
             };
 
             if (!summary.HasData)
@@ -126,6 +136,106 @@ namespace App.Api.Managers
             summary.Risks = signals.Risks;
 
             return summary;
+        }
+
+        /// <summary>
+        /// 执行列表三块 + 管理层概览。三块各自「按紧急度取前 3 条」，
+        /// 但 Total / OpenCount 给的是全量条数，前端「查看全部」旁的计数不会跟着被截断。
+        /// </summary>
+        private async Task<DashboardExecutionDto> BuildExecutionAsync()
+        {
+            var deals = (await _databaseAccessor.GetAllDocuments<Deal>()).ToList();
+            var plans = (await _databaseAccessor.GetAllDocuments<ContentPlan>()).ToList();
+            var todos = (await _databaseAccessor.GetAllDocuments<TodoItem>()).ToList();
+
+            var dealTitles = deals.ToDictionary(
+                deal => deal.Id,
+                deal => string.IsNullOrWhiteSpace(deal.Title) ? deal.ClientName : deal.Title);
+
+            var activeDeals = deals
+                .Where(deal => !string.Equals(deal.Stage, DealStage.Lost, StringComparison.OrdinalIgnoreCase) &&
+                               !string.Equals(deal.Stage, DealStage.Settled, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(deal => ExecutionMapper.DealPriority(deal.Stage))
+                .ThenByDescending(deal => deal.UpdatedAt)
+                .ToList();
+
+            var activePlans = plans
+                .Where(plan => !string.Equals(plan.Status, ContentPlanStatus.Archived, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(plan => ExecutionMapper.PlanPriority(plan.Status))
+                .ThenBy(plan => plan.PlannedAt ?? DateOnly.MaxValue)
+                .ThenByDescending(plan => plan.UpdatedAt)
+                .ToList();
+
+            var openTodos = TodoBuilder.Build(todos, deals, plans, includeDone: false, take: 200);
+
+            var execution = new DashboardExecutionDto
+            {
+                Deals = activeDeals
+                    .Take(MaxExecutionRows)
+                    .Select(ExecutionMapper.DealToDto)
+                    .ToList(),
+                Plans = activePlans
+                    .Take(MaxExecutionRows)
+                    .Select(plan => ExecutionMapper.PlanToDto(
+                        plan,
+                        plan.DealId.HasValue && dealTitles.TryGetValue(plan.DealId.Value, out var title) ? title : string.Empty))
+                    .ToList(),
+                Todos = openTodos.Take(MaxExecutionRows).ToList(),
+                DealTotal = activeDeals.Count,
+                PlanTotal = activePlans.Count,
+                TodoOpenCount = openTodos.Count,
+                SourceLabel = BuildExecutionSourceLabel(deals, plans, todos)
+            };
+
+            // 管理层面板只给管理员；其他角色拿到空列表，前端据此不渲染。
+            var roles = _userContextService.UserRoles ?? new List<string>();
+            if (roles.Contains(Roles.Admin))
+            {
+                var inProgressDeals = deals.Count(deal => deal.Stage is DealStage.Quoting or DealStage.PricingReview
+                    or DealStage.Confirmed or DealStage.Delivering);
+                var pendingPlans = plans.Count(plan => plan.Status == ContentPlanStatus.Scheduled);
+
+                execution.Management = new List<DashboardManagementDto>
+                {
+                    new()
+                    {
+                        Label = "进行中商务合作",
+                        Value = inProgressDeals,
+                        Unit = "个",
+                        Trace = "报价中 / 待报价审核 / 已确认 / 待制作，不含已结算与已丢失"
+                    },
+                    new()
+                    {
+                        Label = "待制作内容计划",
+                        Value = pendingPlans,
+                        Unit = "份",
+                        Trace = "状态为待制作 / 发布的内容计划，含今日排期"
+                    },
+                    new()
+                    {
+                        Label = "待处理待办",
+                        Value = openTodos.Count,
+                        Unit = "条",
+                        Trace = "人工待办 + 由商务单阶段与内容计划推导出的自动待办"
+                    }
+                };
+            }
+
+            return execution;
+        }
+
+        private static string BuildExecutionSourceLabel(
+            IReadOnlyList<Deal> deals,
+            IReadOnlyList<ContentPlan> plans,
+            IReadOnlyList<TodoItem> todos)
+        {
+            var manualTodos = todos.Count(todo => !string.Equals(todo.Status, TodoStatus.Done, StringComparison.OrdinalIgnoreCase));
+            var hasSample = deals.Any(deal => SampleData.IsSample(deal.CreatedBy)) ||
+                            plans.Any(plan => SampleData.IsSample(plan.CreatedBy)) ||
+                            todos.Any(todo => SampleData.IsSample(todo.CreatedBy));
+
+            var label = $"{deals.Count} 条商务单 / {plans.Count} 条内容计划 / {manualTodos} 条人工待办";
+            return hasSample ? $"{label}（含开发态示例数据）" : label;
         }
 
         private static List<DashboardKpiDto> BuildKpis(

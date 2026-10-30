@@ -6,10 +6,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 const routeMeta = [
-  { prefix: '/business', label: '商务合作', next: ['合作单列表与筛选', '报价审批流', '交付排期与验收'] },
-  { prefix: '/plans', label: '内容计划', next: ['选题评分明细', '各平台方向与排期', '发布后数据回收'] },
   { prefix: '/connections', label: '平台连接', next: ['账号授权状态', '同步失败重试', '平台限额与告警'] },
-  { prefix: '/analysis', label: '数据分析', next: ['平台对比视图', '爆款归因', '限流风险预警'] },
 ];
 
 const WorkspaceDetailPlaceholderView = () => {
@@ -52,14 +49,12 @@ const WorkspaceDetailPlaceholderView = () => {
                 返回工作台
               </Link>
             </Button>
-            {location.pathname.startsWith('/business') ? (
-              <Button variant="ghost" asChild>
-                <Link to="/business">
-                  浏览合作列表
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-            ) : null}
+            <Button variant="ghost" asChild>
+              <Link to="/connections">
+                返回平台连接
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
           </div>
         </PanelBody>
       </Panel>

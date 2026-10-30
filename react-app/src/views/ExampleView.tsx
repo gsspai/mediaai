@@ -24,7 +24,7 @@ import {
   getRoleLabels,
   hasRole,
 } from '@/utils/roles';
-import { Activity, ArrowRight, CalendarRange, Flame, Sparkles, Siren, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CalendarRange, Flame, Siren } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -130,30 +130,6 @@ const toSignalViews = (items: DashboardSignalDto[]): SignalView[] =>
     href: '/connections',
   }));
 
-const businessRows = [
-  { name: '青岚科技春季合作', owner: '商务 / 林乔', status: '待报价审核', statusTone: 'warning' as StatusTone, nextStep: '财务确认报价区间', href: '/business/deal-qinglan' },
-  { name: '云屿品牌发布专项', owner: '管理员 / 周岚', status: '待管理确认', statusTone: 'info' as StatusTone, nextStep: '确认排期与交付边界', href: '/business/deal-yunyu' },
-  { name: '洛川汽车区域投放', owner: '运营 / 许舟', status: '待制作 / 发布', statusTone: 'default' as StatusTone, nextStep: '补齐短视频封面与发布时间', href: '/business/deal-luochuan' },
-];
-
-const planRows = [
-  { name: '今日热点窗口', cycle: '今日 14:00', score: '8.7 / 10', direction: '抖音故事化、公众号深度拆解', href: '/plans/daily-hotspot' },
-  { name: '周度科技观察', cycle: '本周', score: '7.9 / 10', direction: '微博快评、头条延展报道', href: '/plans/weekly-tech' },
-  { name: '品牌案例拆解', cycle: '本周', score: '7.5 / 10', direction: '公众号长文、小红书图文复盘', href: '/plans/brand-case' },
-];
-
-const todoRows = [
-  { title: '抖音账号授权即将失效', owner: '运营 / 发布', urgency: '高优先', tone: 'destructive' as StatusTone, href: '/connections' },
-  { title: '3 条商务单等待财务复核报价', owner: '财务', urgency: '今日处理', tone: 'warning' as StatusTone, href: '/business?status=pricing-review' },
-  { title: '本周内容计划缺少微博方向说明', owner: '策划', urgency: '需补全', tone: 'warning' as StatusTone, href: '/plans/weekly-tech' },
-];
-
-const managementOverview = [
-  { label: '进行中商务合作', value: 18, unit: '个' },
-  { label: '本周内容计划', value: 12, unit: '份' },
-  { label: '同步异常账号', value: 2, unit: '个' },
-];
-
 const changeRate = (points: TrendPoint[]) => {
   if (points.length < 2) return '暂无对比';
   const first = points[0].views;
@@ -240,6 +216,17 @@ const HomeView = () => {
 
   const opportunityViews = summary ? toSignalViews(summary.Opportunities ?? []) : fallbackOpportunities;
   const riskViews = summary ? toSignalViews(summary.Risks ?? []) : fallbackRisks;
+
+  // 执行列表三块来自 DashboardManager.GetSummary().Execution，与指标区间无关。
+  // 接口没回来时留空，不拿示例数据顶替，避免把假单当成真的待办。
+  const execution = summary?.Execution;
+  const dealRows = execution?.Deals ?? [];
+  const planRows = execution?.Plans ?? [];
+  const todoRows = execution?.Todos ?? [];
+  const managementRows = execution?.Management ?? [];
+  const hasExecution = Boolean(execution);
+  // 计划页右栏只放由内容计划推导出来的提醒（缺方向 / 已过排期），不混入结算类待办。
+  const planReminders = todoRows.filter((item) => item.Key.startsWith('auto-plan'));
 
   return (
     <PageShell>
@@ -437,17 +424,28 @@ const HomeView = () => {
 
       {isManagement ? (
         <Panel>
-          <PanelHeader eyebrow="管理层概览" title="跨业务总量" />
+          <PanelHeader
+            eyebrow="管理层概览"
+            title="跨业务总量"
+            actions={<StatusPill tone={hasExecution ? 'info' : 'default'}>{hasExecution ? '实时统计' : '待加载'}</StatusPill>}
+          />
           <PanelBody className="grid gap-3 sm:grid-cols-3">
-            {managementOverview.map((item) => (
-              <div key={item.label} className="rounded-2xl border border-border/60 bg-background/60 px-5 py-4">
-                <p className="text-sm text-muted-foreground">{item.label}</p>
-                <div className="mt-3 flex items-baseline gap-1.5">
-                  <span className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{item.value}</span>
-                  <span className="text-xs text-muted-foreground">{item.unit}</span>
+            {managementRows.length > 0 ? (
+              managementRows.map((item) => (
+                <div key={item.Label} className="rounded-2xl border border-border/60 bg-background/60 px-5 py-4">
+                  <p className="text-sm text-muted-foreground">{item.Label}</p>
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="text-4xl font-semibold leading-none tracking-tight tabular-nums">{item.Value}</span>
+                    <span className="text-xs text-muted-foreground">{item.Unit}</span>
+                  </div>
+                  <p className="mt-2 text-[10px] leading-4 text-muted-foreground/80">{item.Trace}</p>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="px-1 py-2 text-sm leading-6 text-muted-foreground">
+                {hasExecution ? '当前账号不是管理员，管理层面板仅对管理员展示。' : '接口尚未返回执行列表，管理层面板暂不展示。'}
+              </p>
+            )}
           </PanelBody>
         </Panel>
       ) : null}
@@ -477,6 +475,7 @@ const HomeView = () => {
             <PanelHeader
               eyebrow="商务合作"
               title="当前执行"
+              description={hasExecution ? `共 ${execution?.DealTotal ?? 0} 条推进中的商务单，按紧急度取前 ${dealRows.length} 条。` : '接口尚未返回执行列表。'}
               actions={
                 <Button variant="outline" size="sm" asChild>
                   <Link to="/business">查看全部</Link>
@@ -494,25 +493,40 @@ const HomeView = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {businessRows.map((row) => (
-                  <TableRow key={row.name} className="border-border/50">
-                    <TableCell className="px-6 py-4 font-medium whitespace-normal">{row.name}</TableCell>
-                    <TableCell className="py-4 text-muted-foreground">{row.owner}</TableCell>
-                    <TableCell className="py-4">
-                      <StatusPill tone={row.statusTone}>{row.status}</StatusPill>
-                    </TableCell>
-                    <TableCell className="py-4 whitespace-normal text-muted-foreground">{row.nextStep}</TableCell>
-                    <TableCell className="px-6 py-4 text-right">
-                      {/* -mr-2.5 抵消 Button 的 px-2.5，让“进入详情”与表头“详情”右边缘严格对齐 */}
-                      <Button variant="ghost" size="sm" asChild className="-mr-[11px]">
-                        <Link to={row.href}>
-                          进入详情
-                          <ArrowRight className="size-4" />
-                        </Link>
-                      </Button>
+                {dealRows.length > 0 ? (
+                  dealRows.map((row) => (
+                    <TableRow key={row.Id} className="border-border/50">
+                      <TableCell className="px-6 py-4 font-medium whitespace-normal">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{row.Title}</span>
+                          {row.IsSample ? <StatusPill tone="default">示例</StatusPill> : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="py-4 text-muted-foreground">{row.OwnerName}</TableCell>
+                      <TableCell className="py-4">
+                        <StatusPill tone={(row.Tone as StatusTone) ?? 'default'}>{row.StageLabel}</StatusPill>
+                      </TableCell>
+                      <TableCell className="py-4 whitespace-normal text-muted-foreground">{row.NextStep}</TableCell>
+                      <TableCell className="px-6 py-4 text-right">
+                        {/* -mr-2.5 抵消 Button 的 px-2.5，让“进入详情”与表头“详情”右边缘严格对齐 */}
+                        <Button variant="ghost" size="sm" asChild className="-mr-[11px]">
+                          <Link to={`/business/${row.Id}`}>
+                            进入详情
+                            <ArrowRight className="size-4" />
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow className="border-border/50 hover:bg-transparent">
+                    <TableCell colSpan={5} className="px-6 py-6 text-sm leading-6 text-muted-foreground">
+                      {hasExecution
+                        ? '没有推进中的商务单。新建后这里会显示待报价审核、待制作等需要处理的事项。'
+                        : '执行列表没有加载成功，稍后重试或检查后端接口。'}
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
               </TableBody>
             </Table>
           </Panel>
@@ -521,7 +535,16 @@ const HomeView = () => {
         {activeTab === 'plans' ? (
           <div className="grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
             <Panel>
-              <PanelHeader eyebrow="内容计划" title="当前执行" />
+              <PanelHeader
+                eyebrow="内容计划"
+                title="当前执行"
+                description={hasExecution ? `共 ${execution?.PlanTotal ?? 0} 条未归档计划，按紧急度取前 ${planRows.length} 条。` : '接口尚未返回执行列表。'}
+                actions={
+                  <Button variant="outline" size="sm" asChild>
+                    <Link to="/plans">查看全部</Link>
+                  </Button>
+                }
+              />
               <Table>
                 <TableHeader>
                   <TableRow className="border-border/60 hover:bg-transparent">
@@ -533,23 +556,38 @@ const HomeView = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {planRows.map((row) => (
-                    <TableRow key={row.name} className="border-border/50">
-                      <TableCell className="px-6 py-4 font-medium whitespace-normal">{row.name}</TableCell>
-                      <TableCell className="py-4 text-muted-foreground">{row.cycle}</TableCell>
-                      <TableCell className="py-4 tabular-nums">{row.score}</TableCell>
-                      <TableCell className="py-4 whitespace-normal text-muted-foreground">{row.direction}</TableCell>
-                      <TableCell className="px-6 py-4 text-right">
-                        {/* 同上：负外边距抵消按钮左右内边距，保证列内右对齐 */}
-                        <Button variant="ghost" size="sm" asChild className="-mr-[11px]">
-                          <Link to={row.href}>
-                            进入详情
-                            <ArrowRight className="size-4" />
-                          </Link>
-                        </Button>
+                  {planRows.length > 0 ? (
+                    planRows.map((row) => (
+                      <TableRow key={row.Id} className="border-border/50">
+                        <TableCell className="px-6 py-4 font-medium whitespace-normal">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span>{row.Title}</span>
+                            <StatusPill tone={(row.Tone as StatusTone) ?? 'default'}>{row.StatusLabel}</StatusPill>
+                          </div>
+                        </TableCell>
+                        <TableCell className="py-4 text-muted-foreground">{row.CycleDisplay}</TableCell>
+                        <TableCell className="py-4 tabular-nums">{row.ScoreDisplay}</TableCell>
+                        <TableCell className="py-4 whitespace-normal text-muted-foreground">
+                          {row.Direction || '缺少方向说明'}
+                        </TableCell>
+                        <TableCell className="px-6 py-4 text-right">
+                          {/* 同上：负外边距抵消按钮左右内边距，保证列内右对齐 */}
+                          <Button variant="ghost" size="sm" asChild className="-mr-[11px]">
+                            <Link to={`/plans/${row.Id}`}>
+                              进入详情
+                              <ArrowRight className="size-4" />
+                            </Link>
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow className="border-border/50 hover:bg-transparent">
+                      <TableCell colSpan={5} className="px-6 py-6 text-sm leading-6 text-muted-foreground">
+                        {hasExecution ? '没有未归档的内容计划。' : '执行列表没有加载成功，稍后重试或检查后端接口。'}
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             </Panel>
@@ -557,9 +595,22 @@ const HomeView = () => {
             <Panel>
               <PanelHeader eyebrow="计划提醒" title="待处理提示" icon={CalendarRange} />
               <PanelBody className="space-y-3">
-                <CompactAlert icon={Sparkles} title="微博方向待补充" />
-                <CompactAlert icon={CalendarRange} title="热点计划 16:00 前定稿" />
-                <CompactAlert icon={Activity} title="竞品观察已更新" />
+                {planReminders.length > 0 ? (
+                  planReminders.map((item) => (
+                    <Link
+                      key={item.Key}
+                      to={item.Href}
+                      className="flex items-start justify-between gap-3 rounded-2xl border border-border/60 bg-background/60 px-5 py-4 transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      <span className="text-sm font-medium leading-6">{item.Title}</span>
+                      <StatusPill tone={(item.Tone as StatusTone) ?? 'default'}>{item.Urgency}</StatusPill>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="px-1 py-2 text-sm leading-6 text-muted-foreground">
+                    {hasExecution ? '没有待补方向或已逾期未发布的计划。' : '执行列表没有加载成功。'}
+                  </p>
+                )}
               </PanelBody>
             </Panel>
           </div>
@@ -567,23 +618,40 @@ const HomeView = () => {
 
         {activeTab === 'todo' ? (
           <Panel>
-            <PanelHeader eyebrow="跨角色待办" title="当前执行" />
+            <PanelHeader
+              eyebrow="跨角色待办"
+              title="当前执行"
+              description={
+                hasExecution
+                  ? `未完成 ${execution?.TodoOpenCount ?? 0} 条，其中「自动」由商务单阶段或内容计划推导，条件修好后自动消失。`
+                  : '接口尚未返回执行列表。'
+              }
+            />
             <PanelBody className="space-y-3">
-              {todoRows.map((row) => (
-                <Link
-                  key={row.title}
-                  to={row.href}
-                  className="block rounded-2xl border border-border/60 bg-background/60 px-5 py-4 transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
-                      <p className="font-medium leading-6">{row.title}</p>
-                      <p className="text-sm text-muted-foreground">{row.owner}</p>
+              {todoRows.length > 0 ? (
+                todoRows.map((row) => (
+                  <Link
+                    key={row.Key}
+                    to={row.Href}
+                    className="block rounded-2xl border border-border/60 bg-background/60 px-5 py-4 transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="space-y-1">
+                        <p className="font-medium leading-6">{row.Title}</p>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          <span>{row.OwnerRoleLabel}</span>
+                          {row.Auto ? <StatusPill tone="info">自动</StatusPill> : null}
+                        </div>
+                      </div>
+                      <StatusPill tone={(row.Tone as StatusTone) ?? 'default'}>{row.Urgency}</StatusPill>
                     </div>
-                    <StatusPill tone={row.tone}>{row.urgency}</StatusPill>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                ))
+              ) : (
+                <p className="px-1 py-2 text-sm leading-6 text-muted-foreground">
+                  {hasExecution ? '没有未完成的待办。' : '执行列表没有加载成功，稍后重试或检查后端接口。'}
+                </p>
+              )}
             </PanelBody>
           </Panel>
         ) : null}
@@ -610,13 +678,6 @@ const SignalRow = ({ title, platform, signal, detail, tone, trace, href }: Signa
       <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground" />
     </div>
   </Link>
-);
-
-const CompactAlert = ({ icon: Icon, title }: { icon: LucideIcon; title: string }) => (
-  <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-background/60 px-5 py-4">
-    <Icon className="size-4 text-muted-foreground" />
-    <span className="text-sm font-medium">{title}</span>
-  </div>
 );
 
 const MetricTile = ({ label, value }: { label: string; value: string }) => (

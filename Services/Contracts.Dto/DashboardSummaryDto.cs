@@ -51,6 +51,57 @@ public class DashboardSummaryDto
     /// 阈值来源：默认阈值，或者「阈值更新于 2026-10-20 16:40 · someone@example.com」。
     /// </summary>
     public string SignalPolicyTrace { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 执行列表（商务单 / 内容计划 / 待办）与管理层概览。与 KPI 独立：
+    /// 即使指标区间内没有数据，执行列表照样返回真实单据。
+    /// </summary>
+    public DashboardExecutionDto Execution { get; set; } = new();
+}
+
+/// <summary>
+/// 首页「执行列表」的三块数据 + 管理层概览。每块最多 3 条，按紧急度排序。
+/// </summary>
+public class DashboardExecutionDto
+{
+    public List<DealDto> Deals { get; set; } = new();
+
+    public List<ContentPlanDto> Plans { get; set; } = new();
+
+    public List<TodoDto> Todos { get; set; } = new();
+
+    /// <summary>
+    /// 仅 admin 返回；其他角色为空列表，前端据此决定是否渲染管理层面板。
+    /// </summary>
+    public List<DashboardManagementDto> Management { get; set; } = new();
+
+    /// <summary>
+    /// 一句话来源说明，例如「6 条商务单 / 4 条内容计划 / 2 条人工待办（含开发态示例数据）」。
+    /// </summary>
+    public string SourceLabel { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 三块的总条数（不是各取 3 条后的条数），用于「查看全部」旁的计数。
+    /// </summary>
+    public int DealTotal { get; set; }
+
+    public int PlanTotal { get; set; }
+
+    public int TodoOpenCount { get; set; }
+}
+
+/// <summary>
+/// 管理层概览的一张数字卡。
+/// </summary>
+public class DashboardManagementDto
+{
+    public string Label { get; set; } = string.Empty;
+
+    public int Value { get; set; }
+
+    public string Unit { get; set; } = "个";
+
+    public string Trace { get; set; } = string.Empty;
 }
 
 /// <summary>
